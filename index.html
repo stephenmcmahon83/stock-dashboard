@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Interactive Weekly Stock Analysis</title>
+    <title>Advanced Conditional Weekly Stock Analysis</title>
     <style>
         /* A clean, modern, and professional design */
         :root {
@@ -42,7 +42,9 @@
         h1 { margin: 0 0 1rem 0; }
         h2 { margin: 2.5rem 0 1.5rem 0; color: var(--text-dark); text-align: center; }
         #current-week-display { color: var(--text-light); font-weight: 500; font-size: 1.1rem; }
-        .controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
+        .controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1.5rem; margin-top: 1rem; }
+        .control-group { display: flex; flex-direction: column; gap: 0.5rem; align-items: center; }
+        .control-label { font-size: 0.9rem; font-weight: 600; color: var(--text-light); }
         .search-box { display: flex; gap: 0.5rem; }
         .search-input { width: 150px; padding: 10px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 1rem; text-transform: uppercase; }
         .search-button { padding: 10px 20px; border: none; border-radius: 5px; background-color: var(--primary-blue); color: white; font-size: 1rem; cursor: pointer; transition: background-color 0.2s; }
@@ -63,10 +65,6 @@
         .positive { color: var(--positive-color); font-weight: 500; }
         .negative { color: var(--negative-color); font-weight: 500; }
         .table-wrapper { max-height: 60vh; overflow-y: auto; }
-
-        /* Data Bar for Win Rate */
-        .data-bar-container { width: 100px; height: 20px; background-color: #e9ecef; border-radius: 3px; overflow: hidden; }
-        .data-bar { height: 100%; background-color: var(--positive-color); }
     </style>
 </head>
 <body>
@@ -76,13 +74,27 @@
             <h1>Advanced Weekly Stock Analysis</h1>
             <div id="current-week-display"></div>
             <div class="controls">
-                <div class="search-box">
-                    <input type="text" id="symbolInput" class="search-input" placeholder="e.g., AAPL" value="SPY">
-                    <button id="searchButton" class="search-button">Search</button>
+                <div class="control-group">
+                    <div class="control-label">Stock Symbol</div>
+                    <div class="search-box">
+                        <input type="text" id="symbolInput" class="search-input" placeholder="e.g., AAPL" value="SPY">
+                        <button id="searchButton" class="search-button">Search</button>
+                    </div>
                 </div>
-                <div class="filter-buttons">
-                    <button id="filterAll" class="active">All-Time</button>
-                    <button id="filter5Y">Last 5 Years</button>
+                <div class="control-group">
+                    <div class="control-label">Time Period</div>
+                    <div class="filter-buttons">
+                        <button id="filterAllTime" class="active">All-Time</button>
+                        <button id="filter5Y">Last 5 Years</button>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Condition</div>
+                    <div class="filter-buttons">
+                        <button id="filterAllWeeks" class="active">All Weeks</button>
+                        <button id="filterFollowingUp">Following Up Week</button>
+                        <button id="filterFollowingDown">Following Down Week</button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -96,11 +108,9 @@
                     <thead>
                         <tr>
                             <th class="sortable" data-column="weekNumber" title="Week of the year (1-53)">Week #</th>
-                            <th class="sortable" data-column="count" title="Number of times this week appears in the dataset">Count</th>
-                            <th class="sortable" data-column="avgReturn" title="The average open-to-close return for this week number">Avg. Return (%)</th>
-                            <th class="sortable" data-column="profitablePct" title="The percentage of times this week number had a positive return">Profitable Weeks (%)</th>
-                            <th class="sortable" data-column="stdDev" title="Volatility of returns. Lower is more consistent.">Std. Dev (%)</th>
-                            <th class="sortable" data-column="profitFactor" title="Total gains from winning weeks / Total losses from losing weeks. Higher is better.">Profit Factor</th>
+                            <th class="sortable" data-column="count" title="Number of weeks that match the filter criteria">Count</th>
+                            <th class="sortable" data-column="avgReturn" title="The average return for weeks matching the criteria">Avg. Return (%)</th>
+                            <th class="sortable" data-column="profitablePct" title="The percentage of matching weeks that were profitable">Profitable Weeks (%)</th>
                         </tr>
                     </thead>
                     <tbody id="summaryTableBody"></tbody>
@@ -126,34 +136,28 @@
     <script>
         // --- Helper Functions ---
         function getWeekOfYear(d) {
-            const date = new Date(d);
-            date.setHours(0, 0, 0, 0);
+            const date = new Date(d); date.setHours(0, 0, 0, 0);
             date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
             const week1 = new Date(date.getFullYear(), 0, 4);
             return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
         }
 
-        function standardDeviation(values) {
-            const avg = values.reduce((a, b) => a + b, 0) / values.length;
-            const squareDiffs = values.map(value => Math.pow(value - avg, 2));
-            const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / values.length;
-            return Math.sqrt(avgSquareDiff);
-        }
-
         // --- Global State ---
-        let fullTimeSeries = null;
+        let fullHistoricalData = [];
         let summaryData = [];
         let currentSort = { column: 'weekNumber', direction: 'asc' };
+        let activeTimeFilter = 'all';
+        let activeConditionFilter = 'all';
 
         // --- DOM Elements ---
         const [
             statusMessage, summarySection, detailSection, summaryTableBody, detailTableBody,
             symbolInput, searchButton, currentWeekDisplay, summarySymbol, detailSymbol,
-            filterAllButton, filter5YButton
+            filterAllTimeBtn, filter5YBtn, filterAllWeeksBtn, filterFollowingUpBtn, filterFollowingDownBtn
         ] = [
             'status-message', 'summarySection', 'detailSection', 'summaryTableBody', 'detailTableBody',
             'symbolInput', 'searchButton', 'current-week-display', 'summary-symbol', 'detail-symbol',
-            'filterAll', 'filter5Y'
+            'filterAllTime', 'filter5Y', 'filterAllWeeks', 'filterFollowingUp', 'filterFollowingDown'
         ].map(id => document.getElementById(id));
         
         const API_KEY = 'BH5QY6K3JQKBEMT7';
@@ -170,69 +174,86 @@
                 const data = await response.json();
                 if (data.Note || data["Error Message"]) throw new Error(data.Note || data["Error Message"]);
                 
-                fullTimeSeries = data['Weekly Adjusted Time Series'];
-                if (!fullTimeSeries) throw new Error(`No data found for symbol "${symbol}".`);
+                const timeSeries = data['Weekly Adjusted Time Series'];
+                if (!timeSeries) throw new Error(`No data found for symbol "${symbol}".`);
                 
-                processAndDisplayData('all'); // Initial display with all data
+                // Pre-process all data into a chronological array with calculated returns
+                fullHistoricalData = Object.keys(timeSeries).map(date => {
+                    const open = parseFloat(timeSeries[date]['1. open']);
+                    const close = parseFloat(timeSeries[date]['4. close']);
+                    return {
+                        date,
+                        weekNumber: getWeekOfYear(date),
+                        open,
+                        close,
+                        return: ((close - open) / open) * 100
+                    };
+                }).reverse(); // Ensure data is oldest to newest for processing
+
+                processAndDisplayData();
             } catch (error) {
                 handleError(error);
             }
         }
 
-        function processAndDisplayData(timePeriod) {
+        function processAndDisplayData() {
             statusMessage.textContent = `Analyzing data...`;
             statusMessage.style.display = 'block';
             [summarySection, detailSection].forEach(el => el.style.display = 'none');
-            
-            let filteredTimeSeries = { ...fullTimeSeries };
-            if (timePeriod === '5y') {
+
+            // 1. Filter by Time Period
+            let timeFilteredData = [...fullHistoricalData];
+            if (activeTimeFilter === '5y') {
                 const fiveYearsAgo = new Date();
                 fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
-                filteredTimeSeries = Object.keys(fullTimeSeries)
-                    .filter(date => new Date(date) >= fiveYearsAgo)
-                    .reduce((obj, key) => { obj[key] = fullTimeSeries[key]; return obj; }, {});
+                timeFilteredData = fullHistoricalData.filter(d => new Date(d.date) >= fiveYearsAgo);
             }
 
+            // 2. Apply Conditional Filter
+            const dataToAnalyze = [];
+            if (activeConditionFilter === 'all') {
+                dataToAnalyze.push(...timeFilteredData);
+            } else {
+                for (let i = 1; i < timeFilteredData.length; i++) {
+                    const prevWeekReturn = timeFilteredData[i-1].return;
+                    if (activeConditionFilter === 'up' && prevWeekReturn > 0) {
+                        dataToAnalyze.push(timeFilteredData[i]);
+                    } else if (activeConditionFilter === 'down' && prevWeekReturn < 0) {
+                        dataToAnalyze.push(timeFilteredData[i]);
+                    }
+                }
+            }
+            
+            // 3. Aggregate for Summary Table
             const weeklyStats = {};
-            const dates = Object.keys(filteredTimeSeries);
-
-            dates.forEach(date => {
-                const open = parseFloat(filteredTimeSeries[date]['1. open']);
-                const close = parseFloat(filteredTimeSeries[date]['4. close']);
-                const weekNumber = getWeekOfYear(date);
+            dataToAnalyze.forEach(weekData => {
+                const { weekNumber, 'return': ret } = weekData;
                 if (!weeklyStats[weekNumber]) weeklyStats[weekNumber] = { returns: [] };
-                weeklyStats[weekNumber].returns.push(((close - open) / open) * 100);
+                weeklyStats[weekNumber].returns.push(ret);
             });
 
             summaryData = [];
-            let detailRowsHTML = '';
-            
             for (let i = 1; i <= 53; i++) {
                 if (weeklyStats[i]?.returns.length > 0) {
                     const { returns } = weeklyStats[i];
                     const positiveReturns = returns.filter(r => r > 0);
-                    const negativeReturns = returns.filter(r => r < 0);
-                    const grossProfit = positiveReturns.reduce((a, b) => a + b, 0);
-                    const grossLoss = Math.abs(negativeReturns.reduce((a, b) => a + b, 0));
-                    
                     summaryData.push({
                         weekNumber: i,
                         count: returns.length,
                         avgReturn: returns.reduce((a, b) => a + b, 0) / returns.length,
                         profitablePct: (positiveReturns.length / returns.length) * 100,
-                        stdDev: standardDeviation(returns),
-                        profitFactor: grossLoss > 0 ? grossProfit / grossLoss : Infinity,
                     });
                 }
             }
-            
-            dates.forEach(date => {
-                const d = filteredTimeSeries[date];
-                const open = parseFloat(d['1. open']), close = parseFloat(d['4. close']);
-                const change = ((close - open) / open) * 100;
-                detailRowsHTML += `<tr><td>${getWeekOfYear(date)}</td><td>${date}</td><td>${open.toFixed(2)}</td><td>${close.toFixed(2)}</td><td class="${change >= 0 ? 'positive' : 'negative'}">${(change > 0 ? '+' : '')}${change.toFixed(2)}%</td></tr>`;
+
+            // 4. Build Detail Table (newest first)
+            let detailRowsHTML = '';
+            dataToAnalyze.slice().reverse().forEach(d => {
+                const changeClass = d.return >= 0 ? 'positive' : 'negative';
+                detailRowsHTML += `<tr><td>${d.weekNumber}</td><td>${d.date}</td><td>${d.open.toFixed(2)}</td><td>${d.close.toFixed(2)}</td><td class="${changeClass}">${(d.return > 0 ? '+' : '')}${d.return.toFixed(2)}%</td></tr>`;
             });
 
+            // 5. Render Everything
             detailTableBody.innerHTML = detailRowsHTML;
             sortAndRenderSummaryTable();
             
@@ -252,26 +273,10 @@
                 if (valA > valB) return direction === 'asc' ? 1 : -1;
                 return 0;
             });
-
             summaryTableBody.innerHTML = summaryData.map(stats => {
                 const avgReturnClass = stats.avgReturn >= 0 ? 'positive' : 'negative';
-                return `
-                    <tr>
-                        <td>${stats.weekNumber}</td>
-                        <td>${stats.count}</td>
-                        <td class="${avgReturnClass}">${(stats.avgReturn > 0 ? '+' : '')}${stats.avgReturn.toFixed(2)}%</td>
-                        <td>
-                            <div class="data-bar-container">
-                                <div class="data-bar" style="width: ${stats.profitablePct.toFixed(2)}%;"></div>
-                            </div>
-                            ${stats.profitablePct.toFixed(2)}%
-                        </td>
-                        <td>${stats.stdDev.toFixed(2)}%</td>
-                        <td>${isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : 'N/A'}</td>
-                    </tr>
-                `;
+                return `<tr><td>${stats.weekNumber}</td><td>${stats.count}</td><td class="${avgReturnClass}">${(stats.avgReturn > 0 ? '+' : '')}${stats.avgReturn.toFixed(2)}%</td><td>${stats.profitablePct.toFixed(2)}%</td></tr>`;
             }).join('');
-
             document.querySelectorAll('#summaryTable th.sortable').forEach(th => {
                 th.classList.remove('sort-asc', 'sort-desc');
                 if (th.dataset.column === column) th.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
@@ -291,22 +296,34 @@
                 const symbol = symbolInput.value.trim().toUpperCase();
                 if (symbol) fetchInitialData(symbol);
             };
-
             searchButton.addEventListener('click', handleSearch);
             symbolInput.addEventListener('keyup', e => e.key === 'Enter' && handleSearch());
 
-            filterAllButton.addEventListener('click', () => {
-                filterAllButton.classList.add('active');
-                filter5YButton.classList.remove('active');
-                if (fullTimeSeries) processAndDisplayData('all');
+            // Time Period Filter Logic
+            [filterAllTimeBtn, filter5YBtn].forEach(btn => {
+                btn.addEventListener('click', () => {
+                    filterAllTimeBtn.classList.remove('active');
+                    filter5YBtn.classList.remove('active');
+                    btn.classList.add('active');
+                    activeTimeFilter = btn.id === 'filter5Y' ? '5y' : 'all';
+                    if (fullHistoricalData.length) processAndDisplayData();
+                });
             });
 
-            filter5YButton.addEventListener('click', () => {
-                filter5YButton.classList.add('active');
-                filterAllButton.classList.remove('active');
-                if (fullTimeSeries) processAndDisplayData('5y');
+            // Condition Filter Logic
+            [filterAllWeeksBtn, filterFollowingUpBtn, filterFollowingDownBtn].forEach(btn => {
+                btn.addEventListener('click', () => {
+                    filterAllWeeksBtn.classList.remove('active');
+                    filterFollowingUpBtn.classList.remove('active');
+                    filterFollowingDownBtn.classList.remove('active');
+                    btn.classList.add('active');
+                    if (btn.id === 'filterFollowingUp') activeConditionFilter = 'up';
+                    else if (btn.id === 'filterFollowingDown') activeConditionFilter = 'down';
+                    else activeConditionFilter = 'all';
+                    if (fullHistoricalData.length) processAndDisplayData();
+                });
             });
-
+            
             document.querySelectorAll('#summaryTable th.sortable').forEach(header => {
                 header.addEventListener('click', () => {
                     const column = header.dataset.column;
@@ -314,7 +331,7 @@
                         currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
                     } else {
                         currentSort.column = column;
-                        currentSort.direction = (['avgReturn', 'profitablePct', 'count', 'profitFactor'].includes(column)) ? 'desc' : 'asc';
+                        currentSort.direction = (['avgReturn', 'profitablePct', 'count'].includes(column)) ? 'desc' : 'asc';
                     }
                     sortAndRenderSummaryTable();
                 });
