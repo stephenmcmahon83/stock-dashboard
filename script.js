@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- CONFIGURATION ---
     // IMPORTANT: Replace this with your NEW, secret Tiingo API key.
-    const TIINGO_API_KEY = 'e071a27687ada2fc663b85f6b49a9b50116f7ab9';
+    const TIINGO_API_KEY = 'PASTE_YOUR_NEW_TIINGO_API_KEY_HERE';
 
     // --- DOM Elements ---
     const tickerInput = document.getElementById('tickerInput');
@@ -89,30 +89,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =========================================================================
-    // === THIS FUNCTION HAS BEEN MODIFIED TO USE THE CORS PROXY ===
+    // === THIS IS THE FINAL, CORRECTED FUNCTION FOR THE TIINGO API ===
     // =========================================================================
     /**
-     * Fetches and processes weekly data from the Tiingo API via a CORS proxy.
+     * Fetches and processes weekly data directly from Tiingo using header authentication.
      * @param {string} ticker The stock ticker symbol.
-     * @returns {Promise<Array>} A promise that resolves to an array of processed weekly data, sorted oldest-to-newest.
+     * @returns {Promise<Array>} A promise that resolves to an array of processed weekly data.
      */
     async function fetchTiingoData(ticker) {
         const startDate = '1970-01-01'; 
-        const tiingoUrl = `https://api.tiingo.com/tiingo/daily/${ticker}/prices?startDate=${startDate}&resampleFreq=weekly&token=${TIINGO_API_KEY}`;
-        
-        // We route the Tiingo URL through the proxy to solve the CORS issue.
-        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${tiingoUrl}`;
+        // Note: The token is NOT in the URL anymore.
+        const tiingoUrl = `https://api.tiingo.com/tiingo/daily/${ticker}/prices?startDate=${startDate}&resampleFreq=weekly`;
 
-        const response = await fetch(proxyUrl);
-        if (!response.ok) {
-            throw new Error(`API or Proxy Error: Status ${response.status}. Check ticker or try again later.`);
-        }
-        
+        // We create a headers object to pass our API key securely.
+        const headers = {
+            'Content-Type': 'application/json',
+            // This is the correct way to authorize with the Tiingo API.
+            'Authorization': `Token ${TIINGO_API_KEY}` 
+        };
+
+        // We make the fetch call directly, with no proxy, passing the headers object.
+        const response = await fetch(tiingoUrl, { headers: headers });
         const data = await response.json();
 
-        // Error handling for Tiingo API responses that come through the proxy
-        if (data.detail) { // Tiingo's specific error format
-            throw new Error(`Tiingo API Error: ${data.detail}`);
+        // Error handling is more direct and reliable now.
+        if (!response.ok) {
+            throw new Error(`Tiingo API Error: ${data.detail || 'Could not fetch data. Check ticker and API key.'}`);
         }
 
         if (!Array.isArray(data) || data.length === 0) {
