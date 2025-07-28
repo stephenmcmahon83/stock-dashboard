@@ -3,68 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Stock Market Analysis (Yahoo Finance)</title>
-    <link rel="stylesheet" href="style.css">
+    <title>SPY Weekly Price Data</title>
+    <!-- We will use Chart.js to create a beautiful, interactive chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* A clean, modern design for the page */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+                Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+        .chart-container {
+            width: 90%;
+            max-width: 1200px;
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 1.5rem;
+        }
+        #status-message {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #7f8c8d;
+            padding: 2rem 0;
+        }
+        /* Style for the chart canvas to ensure it's responsive */
+        canvas {
+            width: 100% !important;
+            height: auto !important;
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Advanced Weekly Stock Analysis</h1>
-        <p>Enter a stock ticker (e.g., AAPL, NVDA, SPY) to view its historical weekly performance and statistical summary.</p>
 
-        <div class="note warning">
-            <strong>Analyst's Warning:</strong> This demo uses an unofficial Yahoo Finance endpoint via a public proxy. This method is unstable and can break. It is not for production use. Financial calculations (like Sharpe Ratio) use a simplified model (0% risk-free rate).
-        </div>
-
-        <div class="input-section">
-            <label for="tickerInput">Stock Ticker:</label>
-            <input type="text" id="tickerInput" placeholder="e.g., AAPL" value="AAPL">
-            <button id="fetchDataButton">Analyze</button>
-        </div>
-
-        <div id="message" class="message"></div>
-
-        <!-- Summary Table -->
-        <h2>Performance Summary by Week of the Year</h2>
-        <div class="table-container">
-            <table id="summaryTable">
-                <thead>
-                    <tr>
-                        <th>Week #</th>
-                        <th>Count</th>
-                        <th>Avg Return</th>
-                        <th>Profit Factor</th>
-                        <th>Sharpe (Ann.)</th>
-                        <th>Std Dev</th>
-                        <th>Max Return</th>
-                        <th>Min Return</th>
-                    </tr>
-                </thead>
-                <tbody id="summaryTableBody">
-                    <!-- Summary data will be inserted here -->
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Detailed Weekly Data Table -->
-        <h2>Historical Weekly Data</h2>
-        <div class="table-container">
-            <table id="detailsTable">
-                <thead>
-                    <tr>
-                        <th>Week #</th>
-                        <th>Date</th>
-                        <th>Open Price</th>
-                        <th>Close Price</th>
-                        <th>% Change</th>
-                    </tr>
-                </thead>
-                <tbody id="stockDataTableBody">
-                    <!-- Detailed data will be inserted here -->
-                </tbody>
-            </table>
-        </div>
+    <div class="chart-container">
+        <h1>SPY - Historical Weekly Open & Close Prices</h1>
+        
+        <!-- This is where the chart will be rendered -->
+        <canvas id="priceChart" style="display: none;"></canvas>
+        
+        <!-- This message will show while data is loading or if an error occurs -->
+        <div id="status-message">Loading data from Alpha Vantage...</div>
     </div>
 
-    <script src="script.js" defer></script>
+    <script>
+        // This function will run automatically once the HTML document is fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            // --- Configuration ---
+            const API_KEY = 'BH5QY6K3JQKBEMT7';
+            const SYMBOL = 'SPY';
+
+            // We use the "WEEKLY_ADJUSTED" function for data adjusted for splits/dividends
+            // and "outputsize=full" to get all available historical data.
+            const API_URL = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=${SYMBOL}&outputsize=full&apikey=${API_KEY}`;
+
+            const statusMessage = document.getElementById('status-message');
+            const priceChartCanvas = document.getElementById('priceChart');
+            
+            // --- Data Fetching and Processing ---
+            
+            // Use the modern 'fetch' API to get data from Alpha Vantage
+            fetch(API_URL)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Alpha Vantage sends a "Note" if you make too many API calls,
+                    // or an "Error Message" for an invalid request. We must check for this.
+                    if (data.Note || data["Error Message"]) {
+                        throw new Error(data.Note || data["Error Message"]);
+                    }
+
+                    // The main data is under this key
+                    const timeSeries = data['Weekly Adjusted Time Series'];
+                    if (!timeSeries) {
+                        throw new Error("Could not find time series data in the API response.");
+                    }
+
+                    // Prepare arrays for our chart
+                    const labels = [];
+                    const openPrices = [];
+                    const closePrices = [];
+
+                    // The API returns data newest-first, so we reverse the keys to
+                    // get a chronological order (oldest-first) for the chart.
+                    const dates = Object.keys(timeSeries).reverse();
+
+                    // Loop through each date to extract the data
+                    dates.forEach(date => {
+                        const weeklyData = timeSeries[date];
+                        labels.push(date);
+                        openPrices.push(parseFloat(weeklyData['1. open']));
+                        closePrices.push(parseFloat(weeklyData['4. close']));
+                    });
+
+                    // Hide status message and show the chart canvas
+                    statusMessage.style.display = 'none';
+                    priceChartCanvas.style.display = 'block';
+
+                    // Now, render the chart with the processed data
+                    renderChart(labels, openPrices, closePrices);
+                })
+                .catch(error => {
+                    // If anything goes wrong, display an error message to the user
+                    console.error('Error fetching or processing data:', error);
+                    statusMessage.textContent = `Error: ${error.message}. Please check your API key or try again later.`;
+                    statusMessage.style.color = 'red';
+                });
+
+            // --- Chart Rendering Function ---
+            function renderChart(labels, openPrices, closePrices) {
+                const ctx = priceChartCanvas.getContext('2d');
+                
+                new Chart(ctx, {
+                    type: 'line', // This creates a line chart
+                    data: {
+                        labels: labels, // X-axis labels (our dates)
+                        datasets: [
+                            {
+                                label: 'Open Price',
+                                data: openPrices,
+                                borderColor: 'rgba(54, 162, 235, 1)', // Blue
+                                backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                                borderWidth: 1.5,
+                                pointRadius: 0, // Hides the dots on the line for a cleaner look
+                                tension: 0.1
+                            },
+                            {
+                                label: 'Close Price',
+                                data: closePrices,
+                                borderColor: 'rgba(255, 99, 132, 1)', // Red
+                                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                                borderWidth: 1.5,
+                                pointRadius: 0,
+                                tension: 0.1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Price (USD)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                titleFont: {
+                                    weight: 'bold'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+
 </body>
 </html>
