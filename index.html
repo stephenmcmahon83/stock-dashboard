@@ -41,7 +41,16 @@
         }
         h1 { margin: 0 0 1rem 0; }
         h2 { margin: 2.5rem 0 1.5rem 0; color: var(--text-dark); text-align: center; }
-        #current-week-display { color: var(--text-light); font-weight: 500; font-size: 1.1rem; }
+        /* NEW: Styles for the top info display */
+        .top-info {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            color: var(--text-light);
+            font-weight: 500;
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+        }
         .controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1.5rem; margin-top: 1rem; }
         .control-group { display: flex; flex-direction: column; gap: 0.5rem; align-items: center; }
         .control-label { font-size: 0.9rem; font-weight: 600; color: var(--text-light); }
@@ -72,7 +81,11 @@
     <div class="container">
         <header>
             <h1>Advanced Weekly Stock Analysis</h1>
-            <div id="current-week-display"></div>
+            <!-- NEW: Container for top-level info -->
+            <div class="top-info">
+                <div id="current-week-display"></div>
+                <div id="prior-week-return-display">Prior Week Return: <span class="value">N/A</span></div>
+            </div>
             <div class="controls">
                 <div class="control-group">
                     <div class="control-label">Stock Symbol</div>
@@ -152,11 +165,11 @@
         // --- DOM Elements ---
         const [
             statusMessage, summarySection, detailSection, summaryTableBody, detailTableBody,
-            symbolInput, searchButton, currentWeekDisplay, summarySymbol, detailSymbol,
+            symbolInput, searchButton, currentWeekDisplay, priorWeekReturnDisplay, summarySymbol, detailSymbol,
             filterAllTimeBtn, filter5YBtn, filterAllWeeksBtn, filterFollowingUpBtn, filterFollowingDownBtn
         ] = [
             'status-message', 'summarySection', 'detailSection', 'summaryTableBody', 'detailTableBody',
-            'symbolInput', 'searchButton', 'current-week-display', 'summary-symbol', 'detail-symbol',
+            'symbolInput', 'searchButton', 'current-week-display', 'prior-week-return-display', 'summary-symbol', 'detail-symbol',
             'filterAllTime', 'filter5Y', 'filterAllWeeks', 'filterFollowingUp', 'filterFollowingDown'
         ].map(id => document.getElementById(id));
         
@@ -166,6 +179,7 @@
             statusMessage.textContent = `Fetching historical data for ${symbol}...`;
             statusMessage.style.display = 'block';
             [summarySection, detailSection].forEach(el => el.style.display = 'none');
+            priorWeekReturnDisplay.querySelector('.value').textContent = 'N/A'; // Reset on new search
 
             const API_URL = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=${symbol}&outputsize=full&apikey=${API_KEY}`;
             
@@ -177,18 +191,19 @@
                 const timeSeries = data['Weekly Adjusted Time Series'];
                 if (!timeSeries) throw new Error(`No data found for symbol "${symbol}".`);
                 
-                // Pre-process all data into a chronological array with calculated returns
                 fullHistoricalData = Object.keys(timeSeries).map(date => {
                     const open = parseFloat(timeSeries[date]['1. open']);
                     const close = parseFloat(timeSeries[date]['4. close']);
-                    return {
-                        date,
-                        weekNumber: getWeekOfYear(date),
-                        open,
-                        close,
-                        return: ((close - open) / open) * 100
-                    };
-                }).reverse(); // Ensure data is oldest to newest for processing
+                    return { date, weekNumber: getWeekOfYear(date), open, close, return: ((close - open) / open) * 100 };
+                }).reverse();
+
+                // NEW: Calculate and display prior week's return
+                if (fullHistoricalData.length >= 2) {
+                    const priorWeekReturn = fullHistoricalData[fullHistoricalData.length - 2].return;
+                    const valueSpan = priorWeekReturnDisplay.querySelector('.value');
+                    valueSpan.textContent = `${(priorWeekReturn > 0 ? '+' : '')}${priorWeekReturn.toFixed(2)}%`;
+                    valueSpan.className = `value ${priorWeekReturn >= 0 ? 'positive' : 'negative'}`;
+                }
 
                 processAndDisplayData();
             } catch (error) {
@@ -201,7 +216,6 @@
             statusMessage.style.display = 'block';
             [summarySection, detailSection].forEach(el => el.style.display = 'none');
 
-            // 1. Filter by Time Period
             let timeFilteredData = [...fullHistoricalData];
             if (activeTimeFilter === '5y') {
                 const fiveYearsAgo = new Date();
@@ -209,14 +223,13 @@
                 timeFilteredData = fullHistoricalData.filter(d => new Date(d.date) >= fiveYearsAgo);
             }
 
-            // 2. Apply Conditional Filter
             const dataToAnalyze = [];
             if (activeConditionFilter === 'all') {
                 dataToAnalyze.push(...timeFilteredData);
             } else {
                 for (let i = 1; i < timeFilteredData.length; i++) {
                     const prevWeekReturn = timeFilteredData[i-1].return;
-                    if (activeConditionFilter === 'up' && prevWeekReturn > 0) {
+                    if (activeConditionFilter === 'up' && prevWeekReturn >= 0) {
                         dataToAnalyze.push(timeFilteredData[i]);
                     } else if (activeConditionFilter === 'down' && prevWeekReturn < 0) {
                         dataToAnalyze.push(timeFilteredData[i]);
@@ -224,13 +237,12 @@
                 }
             }
             
-            // 3. Aggregate for Summary Table
             const weeklyStats = {};
             dataToAnalyze.forEach(weekData => {
                 const { weekNumber, 'return': ret } = weekData;
                 if (!weeklyStats[weekNumber]) weeklyStats[weekNumber] = { returns: [] };
                 weeklyStats[weekNumber].returns.push(ret);
-            });
+});
 
             summaryData = [];
             for (let i = 1; i <= 53; i++) {
@@ -246,14 +258,12 @@
                 }
             }
 
-            // 4. Build Detail Table (newest first)
             let detailRowsHTML = '';
             dataToAnalyze.slice().reverse().forEach(d => {
                 const changeClass = d.return >= 0 ? 'positive' : 'negative';
                 detailRowsHTML += `<tr><td>${d.weekNumber}</td><td>${d.date}</td><td>${d.open.toFixed(2)}</td><td>${d.close.toFixed(2)}</td><td class="${changeClass}">${(d.return > 0 ? '+' : '')}${d.return.toFixed(2)}%</td></tr>`;
             });
 
-            // 5. Render Everything
             detailTableBody.innerHTML = detailRowsHTML;
             sortAndRenderSummaryTable();
             
@@ -299,23 +309,18 @@
             searchButton.addEventListener('click', handleSearch);
             symbolInput.addEventListener('keyup', e => e.key === 'Enter' && handleSearch());
 
-            // Time Period Filter Logic
             [filterAllTimeBtn, filter5YBtn].forEach(btn => {
                 btn.addEventListener('click', () => {
-                    filterAllTimeBtn.classList.remove('active');
-                    filter5YBtn.classList.remove('active');
+                    [filterAllTimeBtn, filter5YBtn].forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     activeTimeFilter = btn.id === 'filter5Y' ? '5y' : 'all';
                     if (fullHistoricalData.length) processAndDisplayData();
                 });
             });
 
-            // Condition Filter Logic
             [filterAllWeeksBtn, filterFollowingUpBtn, filterFollowingDownBtn].forEach(btn => {
                 btn.addEventListener('click', () => {
-                    filterAllWeeksBtn.classList.remove('active');
-                    filterFollowingUpBtn.classList.remove('active');
-                    filterFollowingDownBtn.classList.remove('active');
+                    [filterAllWeeksBtn, filterFollowingUpBtn, filterFollowingDownBtn].forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     if (btn.id === 'filterFollowingUp') activeConditionFilter = 'up';
                     else if (btn.id === 'filterFollowingDown') activeConditionFilter = 'down';
