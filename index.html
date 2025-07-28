@@ -3,32 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPY Weekly Price Data Table</title>
+    <title>SPY Weekly Data Analysis</title>
     <style>
-        /* A clean, modern design for the page and table */
+        /* A clean, modern design for the page and tables */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
                 Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             background-color: #f4f7f9;
             color: #333;
-            display: flex;
-            justify-content: center;
             padding: 1rem;
-            min-height: 100vh;
         }
         .container {
             width: 90%;
             max-width: 1000px;
+            margin: 0 auto;
             background-color: #ffffff;
             padding: 2rem;
             border-radius: 10px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
-        h1 {
+        h1, h2 {
             text-align: center;
             color: #2c3e50;
-            margin-bottom: 1.5rem;
         }
+        h1 { margin-bottom: 0.5rem; }
+        h2 { margin-bottom: 1.5rem; margin-top: 2.5rem; color: #34495e; }
+
         #status-message {
             text-align: center;
             font-size: 1.2rem;
@@ -67,9 +67,9 @@
             color: #ef4444; /* Red */
             font-weight: 500;
         }
-        /* Style for the table wrapper to allow scrolling on small screens */
+        /* Style for the table wrappers to allow scrolling on small screens */
         .table-wrapper {
-            max-height: 70vh;
+            max-height: 60vh;
             overflow-y: auto;
         }
     </style>
@@ -77,27 +77,49 @@
 <body>
 
     <div class="container">
-        <h1>SPY - Historical Weekly Data</h1>
+        <h1>SPY - Weekly Data Analysis</h1>
         
         <!-- This message will show while data is loading or if an error occurs -->
-        <div id="status-message">Loading data from Alpha Vantage...</div>
+        <div id="status-message">Loading & analyzing historical data...</div>
 
-        <div class="table-wrapper">
-            <!-- Table will be hidden until data is loaded -->
-            <table id="dataTable" style="display: none;">
-                <thead>
-                    <tr>
-                        <th>Week #</th>
-                        <th>Date</th>
-                        <th>Open</th>
-                        <th>Close</th>
-                        <th>Change (%)</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody">
-                    <!-- Data rows will be inserted here by JavaScript -->
-                </tbody>
-            </table>
+        <!-- Summary Table Section -->
+        <div id="summarySection" style="display: none;">
+            <h2>Weekly Performance Summary (All Years)</h2>
+            <div class="table-wrapper">
+                <table id="summaryTable">
+                    <thead>
+                        <tr>
+                            <th>Week #</th>
+                            <th>Average Return (%)</th>
+                            <th>Profitable Weeks (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryTableBody">
+                        <!-- Summary rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Detail Table Section -->
+        <div id="detailSection" style="display: none;">
+            <h2>Historical Weekly Data</h2>
+            <div class="table-wrapper">
+                <table id="detailTable">
+                    <thead>
+                        <tr>
+                            <th>Week #</th>
+                            <th>Date</th>
+                            <th>Open</th>
+                            <th>Close</th>
+                            <th>Change (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailTableBody">
+                        <!-- Detail rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -109,15 +131,11 @@
          */
         function getWeekOfYear(dateString) {
             const date = new Date(dateString);
-            // Create a date object for the first day of the year
             const startOfYear = new Date(date.getFullYear(), 0, 1);
-            // Calculate the number of days passed since the beginning of the year
             const days = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24));
-            // Divide by 7 and round up to get the week number
             return Math.ceil((days + 1) / 7);
         }
 
-        // This function will run automatically once the HTML document is fully loaded
         document.addEventListener('DOMContentLoaded', function() {
             
             // --- Configuration ---
@@ -125,44 +143,86 @@
             const SYMBOL = 'SPY';
             const API_URL = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=${SYMBOL}&outputsize=full&apikey=${API_KEY}`;
 
+            // Get references to all the HTML elements we'll need
             const statusMessage = document.getElementById('status-message');
-            const dataTable = document.getElementById('dataTable');
-            const tableBody = document.getElementById('tableBody');
+            const summarySection = document.getElementById('summarySection');
+            const detailSection = document.getElementById('detailSection');
+            const summaryTableBody = document.getElementById('summaryTableBody');
+            const detailTableBody = document.getElementById('detailTableBody');
             
-            // --- Data Fetching and Processing ---
+            // --- Data Fetching and Analysis ---
             fetch(API_URL)
                 .then(response => response.json())
                 .then(data => {
-                    // Check for API errors or rate-limiting notes
                     if (data.Note || data["Error Message"]) {
                         throw new Error(data.Note || data["Error Message"]);
                     }
-
                     const timeSeries = data['Weekly Adjusted Time Series'];
                     if (!timeSeries) {
                         throw new Error("Could not find time series data in the API response.");
                     }
 
-                    // Get the dates from the API response (newest-first).
+                    // --- Stage 1: Aggregate data for the summary table ---
+                    const weeklyStats = {}; // This object will hold stats for each week number (1-53)
                     const dates = Object.keys(timeSeries);
-                    let tableRowsHTML = '';
 
-                    // Loop through each date to build the table rows
                     dates.forEach(date => {
                         const weeklyData = timeSeries[date];
                         const open = parseFloat(weeklyData['1. open']);
                         const close = parseFloat(weeklyData['4. close']);
-                        
-                        // Calculate the week number using our helper function
                         const weekNumber = getWeekOfYear(date);
+                        
+                        // Initialize the stats for this week number if it's the first time we've seen it
+                        if (!weeklyStats[weekNumber]) {
+                            weeklyStats[weekNumber] = { totalReturn: 0, positiveWeeks: 0, count: 0 };
+                        }
+                        
+                        const changePercent = ((close - open) / open) * 100;
+                        
+                        // Add this week's data to our running totals
+                        weeklyStats[weekNumber].totalReturn += changePercent;
+                        weeklyStats[weekNumber].count++;
+                        if (changePercent > 0) {
+                            weeklyStats[weekNumber].positiveWeeks++;
+                        }
+                    });
 
-                        // Calculate the percentage change for the week
-                        let changePercent = ((close - open) / open) * 100;
+                    // --- Stage 2: Build the HTML for the summary table ---
+                    let summaryRowsHTML = '';
+                    // Loop from 1 to 53 to ensure the table is sorted by week number
+                    for (let i = 1; i <= 53; i++) {
+                        if (weeklyStats[i]) { // Check if we have data for this week number
+                            const stats = weeklyStats[i];
+                            const avgReturn = stats.totalReturn / stats.count;
+                            const profitablePct = (stats.positiveWeeks / stats.count) * 100;
+                            
+                            const avgReturnClass = avgReturn >= 0 ? 'positive' : 'negative';
+                            const formattedAvgReturn = (avgReturn > 0 ? '+' : '') + avgReturn.toFixed(2) + '%';
+                            
+                            summaryRowsHTML += `
+                                <tr>
+                                    <td>${i}</td>
+                                    <td class="${avgReturnClass}">${formattedAvgReturn}</td>
+                                    <td>${profitablePct.toFixed(2)}%</td>
+                                </tr>
+                            `;
+                        }
+                    }
+                    summaryTableBody.innerHTML = summaryRowsHTML;
+
+                    // --- Stage 3: Build the HTML for the detail table ---
+                    let detailRowsHTML = '';
+                    dates.forEach(date => {
+                        const weeklyData = timeSeries[date];
+                        const open = parseFloat(weeklyData['1. open']);
+                        const close = parseFloat(weeklyData['4. close']);
+                        const weekNumber = getWeekOfYear(date);
+                        
+                        const changePercent = ((close - open) / open) * 100;
                         const changeClass = changePercent >= 0 ? 'positive' : 'negative';
                         const formattedChange = (changePercent > 0 ? '+' : '') + changePercent.toFixed(2) + '%';
                         
-                        // Build the HTML for the current row, including the new Week # column
-                        tableRowsHTML += `
+                        detailRowsHTML += `
                             <tr>
                                 <td>${weekNumber}</td>
                                 <td>${date}</td>
@@ -172,16 +232,14 @@
                             </tr>
                         `;
                     });
+                    detailTableBody.innerHTML = detailRowsHTML;
 
-                    // Insert all the generated rows into the table body at once
-                    tableBody.innerHTML = tableRowsHTML;
-
-                    // Hide the status message and show the populated table
+                    // --- Stage 4: Display the content ---
                     statusMessage.style.display = 'none';
-                    dataTable.style.display = 'table';
+                    summarySection.style.display = 'block';
+                    detailSection.style.display = 'block';
                 })
                 .catch(error => {
-                    // Display any errors to the user
                     console.error('Error fetching or processing data:', error);
                     statusMessage.textContent = `Error: ${error.message}. Please check your API key or try again later.`;
                     statusMessage.style.color = 'red';
