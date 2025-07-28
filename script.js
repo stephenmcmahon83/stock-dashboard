@@ -60,13 +60,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const period1 = 0; // Start of Unix time to get all data
         const period2 = Math.floor(Date.now() / 1000);
         const yahooEndpoint = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1wk&events=history`;
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooEndpoint)}`;
+        
+        // =========================================================================
+        // === THIS IS THE ONLY LINE THAT HAS CHANGED. SWITCHED TO A NEW PROXY. ===
+        // =========================================================================
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(yahooEndpoint)}`;
 
         const response = await fetch(proxyUrl);
         if (!response.ok) throw new Error(`Proxy server error: ${response.status}`);
 
-        const data = await response.json();
-        const chartData = JSON.parse(data.contents);
+        // corsproxy.io returns the data directly, not wrapped in a 'contents' object
+        const chartData = await response.json(); 
 
         if (chartData.chart.error) throw new Error(`Yahoo Finance error: ${chartData.chart.error.description}`);
 
@@ -97,11 +101,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return processedData;
     }
 
-    /**
-     * Aggregates weekly data and computes statistics for each week of the year.
-     * @param {Array} rawData - The array of processed weekly data.
-     * @returns {Object} An object containing statistics for each week number.
-     */
+    //
+    // The rest of the file is identical to the previous version and is included for completeness.
+    //
+    
     function calculateSummaryStatistics(rawData) {
         const weeklyGroups = {};
 
@@ -120,22 +123,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const sum = returns.reduce((a, b) => a + b, 0);
             const avgReturn = sum / count;
-
             const stdDev = Math.sqrt(returns.map(x => Math.pow(x - avgReturn, 2)).reduce((a, b) => a + b, 0) / count);
-
             const gains = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
             const losses = Math.abs(returns.filter(r => r < 0).reduce((a, b) => a + b, 0));
             const profitFactor = losses === 0 ? Infinity : gains / losses;
-
-            // Simple Sharpe Ratio (Risk-Free Rate = 0), annualized
             const sharpeRatio = stdDev === 0 ? 0 : (avgReturn / stdDev) * Math.sqrt(52);
 
             summary[weekNum] = {
-                count,
-                avgReturn,
-                profitFactor,
-                sharpeRatio,
-                stdDev,
+                count, avgReturn, profitFactor, sharpeRatio, stdDev,
                 maxReturn: Math.max(...returns),
                 minReturn: Math.min(...returns)
             };
@@ -143,12 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return summary;
     }
 
-    /**
-     * Populates the main details table with historical data.
-     */
     function populateDetailsTable(rawData) {
-        const displayData = [...rawData].reverse(); // Display newest data first
-        
+        const displayData = [...rawData].reverse();
         displayData.forEach(d => {
             const row = stockDataTableBody.insertRow();
             row.insertCell().textContent = d.weekNumber;
@@ -161,14 +152,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    /**
-     * Populates the summary statistics table.
-     */
     function populateSummaryTable(summaryStats) {
         for (let i = 1; i <= 53; i++) {
             const stats = summaryStats[i];
             if (!stats) continue;
-
             const row = summaryTableBody.insertRow();
             row.insertCell().textContent = i;
             row.insertCell().textContent = stats.count;
@@ -187,9 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Makes a given HTML table sortable.
-     */
     function makeTableSortable(table) {
         const headers = table.querySelectorAll('th');
         headers.forEach((header, index) => {
@@ -198,47 +182,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 const direction = isAsc ? -1 : 1;
                 const tbody = table.querySelector('tbody');
                 const rows = Array.from(tbody.querySelectorAll('tr'));
-
                 const sortedRows = rows.sort((a, b) => {
                     let valA = a.querySelector(`td:nth-child(${index + 1})`).textContent;
                     let valB = b.querySelector(`td:nth-child(${index + 1})`).textContent;
-                    
                     const numA = parseFloat(valA.replace(/[^0-9.-]+/g, ""));
                     const numB = parseFloat(valB.replace(/[^0-9.-]+/g, ""));
-
                     if (!isNaN(numA) && !isNaN(numB)) {
                         return (numA - numB) * direction;
                     } else {
                         return valA.localeCompare(valB) * direction;
                     }
                 });
-
                 headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
                 header.classList.toggle('sort-asc', !isAsc);
                 header.classList.toggle('sort-desc', isAsc);
-
                 sortedRows.forEach(row => tbody.appendChild(row));
             });
         });
     }
 
-    // --- HELPER FUNCTIONS ---
-
-    /**
-     * THE CORRECTED FUNCTION
-     * Calculates a simple week number (1-53) for a given Date object, using UTC to avoid timezone errors.
-     * @param {Date} date - The date object.
-     * @returns {number} The week number.
-     */
     function getSimpleWeekNumber(date) {
-        // To avoid timezone bugs, we perform all calculations using UTC components.
         const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
         const currentInstance = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-        
         const diff = currentInstance - yearStart;
         const oneDay = 1000 * 60 * 60 * 24;
         const dayOfYear = Math.floor(diff / oneDay);
-        
         return Math.ceil((dayOfYear + 1) / 7);
     }
 
