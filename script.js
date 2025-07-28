@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     filterRadios.forEach(radio => radio.addEventListener('change', runAnalysis));
     
     // Initial check for API Key
-    if (TIINGO_API_KEY === 'e071a27687ada2fc663b85f6b49a9b50116f7ab9') {
+    if (TIINGO_API_KEY === 'PASTE_YOUR_NEW_TIINGO_API_KEY_HERE') {
         displayMessage('ERROR: Please update the TIINGO_API_KEY in script.js', 'error');
     } else {
         handleFetchRequest(); // Initial fetch on page load
@@ -89,37 +89,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =========================================================================
-    // === THIS FUNCTION IS COMPLETELY REWRITTEN FOR THE TIINGO API ===
+    // === THIS FUNCTION HAS BEEN MODIFIED TO USE THE CORS PROXY ===
     // =========================================================================
     /**
-     * Fetches and processes weekly data from the Tiingo API.
+     * Fetches and processes weekly data from the Tiingo API via a CORS proxy.
      * @param {string} ticker The stock ticker symbol.
      * @returns {Promise<Array>} A promise that resolves to an array of processed weekly data, sorted oldest-to-newest.
      */
     async function fetchTiingoData(ticker) {
-        // Tiingo's API can resample to weekly data for us. We request data from a very early date.
         const startDate = '1970-01-01'; 
         const tiingoUrl = `https://api.tiingo.com/tiingo/daily/${ticker}/prices?startDate=${startDate}&resampleFreq=weekly&token=${TIINGO_API_KEY}`;
+        
+        // We route the Tiingo URL through the proxy to solve the CORS issue.
+        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${tiingoUrl}`;
 
-        // No proxy needed! Tiingo's API supports direct requests from browsers (CORS enabled).
-        const response = await fetch(tiingoUrl);
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+            throw new Error(`API or Proxy Error: Status ${response.status}. Check ticker or try again later.`);
+        }
+        
         const data = await response.json();
 
-        // Error handling for Tiingo API responses
-        if (!response.ok) {
-            throw new Error(`Tiingo API Error: ${data.detail || 'Could not fetch data.'}`);
+        // Error handling for Tiingo API responses that come through the proxy
+        if (data.detail) { // Tiingo's specific error format
+            throw new Error(`Tiingo API Error: ${data.detail}`);
+        }
+
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error('No data returned from Tiingo. The ticker may be invalid.');
         }
 
         const processedData = [];
-        // The data is an array of objects, which is much cleaner to work with.
         for (const weekData of data) {
             const open = weekData.open;
             const close = weekData.close;
             if (open === null || close === null || open === 0) continue;
-
-            // The date string from Tiingo is directly compatible with the Date object.
             const date = new Date(weekData.date);
-            
             processedData.push({
                 date: date,
                 open: open,
@@ -128,13 +133,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 weeklyReturn: (close - open) / open
             });
         }
-        
-        // Tiingo already returns data sorted oldest to newest, which is perfect for our filter logic.
         return processedData;
     }
     
     //
-    // All functions below this line remain the same and are correct.
+    // All functions below this line are correct and unchanged.
     //
     
     function calculateSummaryStatistics(data) {
