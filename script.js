@@ -31,11 +31,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         displayMessage(`Fetching all weekly data for ${ticker}...`, 'info');
+        summaryTableBody.innerHTML = '';
+        stockDataTableBody.innerHTML = '';
         fullDataSet = []; // Clear old data
         
         try {
             // Fetch data and store it in our state variable
             fullDataSet = await fetchYahooData(ticker);
+            
+            if (fullDataSet.length === 0) {
+                displayMessage(`No data found for ${ticker}. It may be an invalid ticker symbol.`, 'error');
+                return;
+            }
+            
             // Run the analysis with the newly fetched data
             runAnalysis(); 
         } catch (error) {
@@ -104,46 +112,120 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Fetches and processes data from the Yahoo Finance endpoint.
      * Returns data sorted from OLDEST to NEWEST.
+     * COMPLETELY REWRITTEN WITH EXTENSIVE ERROR HANDLING
      */
     async function fetchYahooData(ticker) {
-        // ... (This function remains the same as before, but ensure it returns data oldest-to-newest for the filter logic)
-        const period1 = 0;
+        const period1 = 0; // Start of Unix time
         const period2 = Math.floor(Date.now() / 1000);
-        const yahooEndpoint = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1wk&events=history`;
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(yahooEndpoint)}`;
-
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error(`Proxy server error: ${response.status}`);
-        const chartData = await response.json(); 
-        if (chartData.chart.error) throw new Error(`Yahoo Finance error: ${chartData.chart.error.description}`);
-
-        const result = chartData.chart.result[0];
-        const timestamps = result.timestamp;
-        if (!timestamps) return [];
-        const quotes = result.indicators.quote[0];
-
-        const processedData = [];
-        for (let i = 0; i < timestamps.length; i++) {
-            const open = quotes.open[i];
-            const close = quotes.close[i];
-            if (open === null || close === null || open === 0) continue;
-            const date = new Date(timestamps[i] * 1000);
-            processedData.push({
-                date: date,
-                open: open,
-                close: close,
-                weekNumber: getSimpleWeekNumber(date),
-                weeklyReturn: (close - open) / open
-            });
+        
+        // Try different proxies if one fails
+        const proxies = [
+            `https://corsproxy.io/?`,
+            `https://corsproxy.org/?`
+        ];
+        
+        let errorMessages = [];
+        
+        // Try each proxy until one works
+        for (const proxyPrefix of proxies) {
+            try {
+                const yahooEndpoint = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1wk&events=history`;
+                const proxyUrl = `${proxyPrefix}${encodeURIComponent(yahooEndpoint)}`;
+                
+                console.log(`Trying proxy: ${proxyPrefix}`);
+                
+                const response = await fetch(proxyUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // Parse the JSON response
+                let chartData;
+                try {
+                    chartData = await response.json();
+                } catch (e) {
+                    throw new Error(`Failed to parse JSON response: ${e.message}`);
+                }
+                
+                // Extra diagnostic logging
+                console.log("API Response Structure:", Object.keys(chartData));
+                
+                // Check for the chart property
+                if (!chartData || !chartData.chart) {
+                    throw new Error("Invalid API response: Missing 'chart' property");
+                }
+                
+                // Check for API errors
+                if (chartData.chart.error) {
+                    throw new Error(`Yahoo Finance API error: ${chartData.chart.error.description}`);
+                }
+                
+                // Check for result array
+                if (!chartData.chart.result || chartData.chart.result.length === 0) {
+                    throw new Error("No results found in the API response");
+                }
+                
+                const result = chartData.chart.result[0];
+                
+                // Check for timestamps
+                if (!result.timestamp || !Array.isArray(result.timestamp) || result.timestamp.length === 0) {
+                    throw new Error("Could not find time series data in the API response.");
+                }
+                
+                // Check for quote data
+                if (!result.indicators || !result.indicators.quote || !result.indicators.quote[0]) {
+                    throw new Error("Missing price quote data in the API response");
+                }
+                
+                const timestamps = result.timestamp;
+                const quotes = result.indicators.quote[0];
+                
+                // Check if the arrays have equal length
+                if (quotes.open.length !== timestamps.length || quotes.close.length !== timestamps.length) {
+                    throw new Error("Data length mismatch in the API response");
+                }
+                
+                // Process the data
+                const processedData = [];
+                for (let i = 0; i < timestamps.length; i++) {
+                    const open = quotes.open[i];
+                    const close = quotes.close[i];
+                    
+                    // Skip invalid data points
+                    if (open === null || close === null || open === 0) continue;
+                    
+                    const date = new Date(timestamps[i] * 1000);
+                    processedData.push({
+                        date: date,
+                        open: open,
+                        close: close,
+                        weekNumber: getSimpleWeekNumber(date),
+                        weeklyReturn: (close - open) / open
+                    });
+                }
+                
+                if (processedData.length === 0) {
+                    throw new Error(`No valid data points found for ${ticker}`);
+                }
+                
+                console.log(`Successfully processed ${processedData.length} data points`);
+                return processedData;
+                
+            } catch (error) {
+                console.error(`Proxy ${proxyPrefix} failed:`, error);
+                errorMessages.push(`${proxyPrefix}: ${error.message}`);
+                // Continue to the next proxy
+            }
         }
-        return processedData; // Returned sorted oldest to newest
+        
+        // If we get here, all proxies failed
+        throw new Error(`All proxies failed. Errors: ${errorMessages.join('; ')}`);
     }
 
     /**
      * Aggregates weekly data and computes statistics.
      */
     function calculateSummaryStatistics(data) {
-        // ... (This function is updated to calculate Win Rate)
         const weeklyGroups = {};
         data.forEach(d => {
             if (!weeklyGroups[d.weekNumber]) {
@@ -182,7 +264,6 @@ document.addEventListener('DOMContentLoaded', () => {
      * Populates the summary statistics table.
      */
     function populateSummaryTable(summaryStats) {
-        // ... (This function is updated to add the new column's data)
         for (let i = 1; i <= 53; i++) {
             const stats = summaryStats[i];
             if (!stats) continue;
@@ -228,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- UTILITY AND HELPER FUNCTIONS (UNCHANGED) ---
+    // --- UTILITY AND HELPER FUNCTIONS ---
     function makeTableSortable(table) {
         const headers = table.querySelectorAll('th');
         headers.forEach((header, index) => {
