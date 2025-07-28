@@ -1,14 +1,11 @@
-html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPY Weekly Price Data</title>
-    <!-- We will use Chart.js to create a beautiful, interactive chart -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>SPY Weekly Price Data Table</title>
     <style>
-        /* A clean, modern design for the page */
+        /* A clean, modern design for the page and table */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
                 Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -16,14 +13,12 @@ html
             color: #333;
             display: flex;
             justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
             padding: 1rem;
+            min-height: 100vh;
         }
-        .chart-container {
+        .container {
             width: 90%;
-            max-width: 1200px;
+            max-width: 1000px;
             background-color: #ffffff;
             padding: 2rem;
             border-radius: 10px;
@@ -40,23 +35,69 @@ html
             color: #7f8c8d;
             padding: 2rem 0;
         }
-        /* Style for the chart canvas to ensure it's responsive */
-        canvas {
-            width: 100% !important;
-            height: auto !important;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        thead th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+            position: sticky;
+            top: 0; /* Makes header sticky during scroll */
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        tr:hover {
+            background-color: #e9ecef;
+        }
+        /* Style for the Change (%) column */
+        .positive {
+            color: #10b981; /* Green */
+            font-weight: 500;
+        }
+        .negative {
+            color: #ef4444; /* Red */
+            font-weight: 500;
+        }
+        /* Style for the table wrapper to allow scrolling on small screens */
+        .table-wrapper {
+            max-height: 70vh;
+            overflow-y: auto;
         }
     </style>
 </head>
 <body>
 
-    <div class="chart-container">
-        <h1>SPY - Historical Weekly Open & Close Prices</h1>
-        
-        <!-- This is where the chart will be rendered -->
-        <canvas id="priceChart" style="display: none;"></canvas>
+    <div class="container">
+        <h1>SPY - Historical Weekly Data</h1>
         
         <!-- This message will show while data is loading or if an error occurs -->
         <div id="status-message">Loading data from Alpha Vantage...</div>
+
+        <div class="table-wrapper">
+            <!-- Table will be hidden until data is loaded -->
+            <table id="dataTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Open</th>
+                        <th>Close</th>
+                        <th>Change (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Data rows will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
@@ -66,127 +107,72 @@ html
             // --- Configuration ---
             const API_KEY = 'BH5QY6K3JQKBEMT7';
             const SYMBOL = 'SPY';
-
-            // We use the "WEEKLY_ADJUSTED" function for data adjusted for splits/dividends
-            // and "outputsize=full" to get all available historical data.
             const API_URL = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=${SYMBOL}&outputsize=full&apikey=${API_KEY}`;
 
             const statusMessage = document.getElementById('status-message');
-            const priceChartCanvas = document.getElementById('priceChart');
+            const dataTable = document.getElementById('dataTable');
+            const tableBody = document.getElementById('tableBody');
             
             // --- Data Fetching and Processing ---
-            
-            // Use the modern 'fetch' API to get data from Alpha Vantage
             fetch(API_URL)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Network response was not ok: ${response.statusText}`);
-                    }
-                    return response.json();
-                })
+                .then(response => response.json())
                 .then(data => {
-                    // Alpha Vantage sends a "Note" if you make too many API calls,
-                    // or an "Error Message" for an invalid request. We must check for this.
+                    // Check for API errors or rate-limiting notes
                     if (data.Note || data["Error Message"]) {
                         throw new Error(data.Note || data["Error Message"]);
                     }
 
-                    // The main data is under this key
                     const timeSeries = data['Weekly Adjusted Time Series'];
                     if (!timeSeries) {
                         throw new Error("Could not find time series data in the API response.");
                     }
 
-                    // Prepare arrays for our chart
-                    const labels = [];
-                    const openPrices = [];
-                    const closePrices = [];
+                    // Get the dates from the API response. By default, they are newest-first.
+                    const dates = Object.keys(timeSeries);
+                    let tableRowsHTML = '';
 
-                    // The API returns data newest-first, so we reverse the keys to
-                    // get a chronological order (oldest-first) for the chart.
-                    const dates = Object.keys(timeSeries).reverse();
-
-                    // Loop through each date to extract the data
+                    // Loop through each date to build the table rows
                     dates.forEach(date => {
                         const weeklyData = timeSeries[date];
-                        labels.push(date);
-                        openPrices.push(parseFloat(weeklyData['1. open']));
-                        closePrices.push(parseFloat(weeklyData['4. close']));
+                        const open = parseFloat(weeklyData['1. open']);
+                        const close = parseFloat(weeklyData['4. close']);
+                        
+                        // Calculate the percentage change for the week
+                        let changePercent = 0;
+                        if (open !== 0) { // Avoid division by zero
+                            changePercent = ((close - open) / open) * 100;
+                        }
+
+                        // Determine the CSS class for color-coding (green/red)
+                        const changeClass = changePercent >= 0 ? 'positive' : 'negative';
+                        
+                        // Format the number to 2 decimal places and add a '+' sign if positive
+                        const formattedChange = (changePercent > 0 ? '+' : '') + changePercent.toFixed(2) + '%';
+                        
+                        // Build the HTML for the current row
+                        tableRowsHTML += `
+                            <tr>
+                                <td>${date}</td>
+                                <td>${open.toFixed(2)}</td>
+                                <td>${close.toFixed(2)}</td>
+                                <td class="${changeClass}">${formattedChange}</td>
+                            </tr>
+                        `;
                     });
 
-                    // Hide status message and show the chart canvas
-                    statusMessage.style.display = 'none';
-                    priceChartCanvas.style.display = 'block';
+                    // Insert all the generated rows into the table body at once
+                    tableBody.innerHTML = tableRowsHTML;
 
-                    // Now, render the chart with the processed data
-                    renderChart(labels, openPrices, closePrices);
+                    // Hide the status message and show the populated table
+                    statusMessage.style.display = 'none';
+                    dataTable.style.display = 'table';
                 })
                 .catch(error => {
-                    // If anything goes wrong, display an error message to the user
+                    // Display any errors to the user
                     console.error('Error fetching or processing data:', error);
                     statusMessage.textContent = `Error: ${error.message}. Please check your API key or try again later.`;
                     statusMessage.style.color = 'red';
                 });
-
-            // --- Chart Rendering Function ---
-            function renderChart(labels, openPrices, closePrices) {
-                const ctx = priceChartCanvas.getContext('2d');
-                
-                new Chart(ctx, {
-                    type: 'line', // This creates a line chart
-                    data: {
-                        labels: labels, // X-axis labels (our dates)
-                        datasets: [
-                            {
-                                label: 'Open Price',
-                                data: openPrices,
-                                borderColor: 'rgba(54, 162, 235, 1)', // Blue
-                                backgroundColor: 'rgba(54, 162, 235, 0.1)',
-                                borderWidth: 1.5,
-                                pointRadius: 0, // Hides the dots on the line for a cleaner look
-                                tension: 0.1
-                            },
-                            {
-                                label: 'Close Price',
-                                data: closePrices,
-                                borderColor: 'rgba(255, 99, 132, 1)', // Red
-                                backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                                borderWidth: 1.5,
-                                pointRadius: 0,
-                                tension: 0.1
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        interaction: {
-                            mode: 'index',
-                            intersect: false,
-                        },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Date'
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Price (USD)'
-                                }
-                            }
-                        },
-                        plugins: {
-                            tooltip: {
-                                titleFont: {
-                                    weight: 'bold'
-                                }
-                            }
-                        }
-                    }
-                });
-            }
         });
     </script>
 
