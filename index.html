@@ -87,6 +87,7 @@
             <table id="dataTable" style="display: none;">
                 <thead>
                     <tr>
+                        <th>Week #</th>
                         <th>Date</th>
                         <th>Open</th>
                         <th>Close</th>
@@ -101,6 +102,21 @@
     </div>
 
     <script>
+        /**
+         * Calculates the week number of the year for a given date string.
+         * @param {string} dateString - A date in 'YYYY-MM-DD' format.
+         * @returns {number} The week number (1-53).
+         */
+        function getWeekOfYear(dateString) {
+            const date = new Date(dateString);
+            // Create a date object for the first day of the year
+            const startOfYear = new Date(date.getFullYear(), 0, 1);
+            // Calculate the number of days passed since the beginning of the year
+            const days = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24));
+            // Divide by 7 and round up to get the week number
+            return Math.ceil((days + 1) / 7);
+        }
+
         // This function will run automatically once the HTML document is fully loaded
         document.addEventListener('DOMContentLoaded', function() {
             
@@ -127,7 +143,7 @@
                         throw new Error("Could not find time series data in the API response.");
                     }
 
-                    // Get the dates from the API response. By default, they are newest-first.
+                    // Get the dates from the API response (newest-first).
                     const dates = Object.keys(timeSeries);
                     let tableRowsHTML = '';
 
@@ -137,21 +153,18 @@
                         const open = parseFloat(weeklyData['1. open']);
                         const close = parseFloat(weeklyData['4. close']);
                         
-                        // Calculate the percentage change for the week
-                        let changePercent = 0;
-                        if (open !== 0) { // Avoid division by zero
-                            changePercent = ((close - open) / open) * 100;
-                        }
+                        // Calculate the week number using our helper function
+                        const weekNumber = getWeekOfYear(date);
 
-                        // Determine the CSS class for color-coding (green/red)
+                        // Calculate the percentage change for the week
+                        let changePercent = ((close - open) / open) * 100;
                         const changeClass = changePercent >= 0 ? 'positive' : 'negative';
-                        
-                        // Format the number to 2 decimal places and add a '+' sign if positive
                         const formattedChange = (changePercent > 0 ? '+' : '') + changePercent.toFixed(2) + '%';
                         
-                        // Build the HTML for the current row
+                        // Build the HTML for the current row, including the new Week # column
                         tableRowsHTML += `
                             <tr>
+                                <td>${weekNumber}</td>
                                 <td>${date}</td>
                                 <td>${open.toFixed(2)}</td>
                                 <td>${close.toFixed(2)}</td>
