@@ -3,36 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPY Weekly Data Analysis</title>
+    <title>Interactive Weekly Stock Analysis</title>
     <style>
-        /* A clean, modern design for the page and tables */
+        /* A clean, modern, and professional design */
+        :root {
+            --primary-blue: #007bff;
+            --primary-dark-blue: #0056b3;
+            --text-dark: #2c3e50;
+            --text-light: #495057;
+            --bg-light: #f4f7f9;
+            --bg-white: #ffffff;
+            --border-color: #dee2e6;
+            --positive-color: #10b981;
+            --negative-color: #ef4444;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
                 Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            background-color: #f4f7f9;
-            color: #333;
+            background-color: var(--bg-light);
+            color: var(--text-dark);
             padding: 1rem;
         }
         .container {
             width: 90%;
-            max-width: 1000px;
+            max-width: 1200px;
             margin: 0 auto;
-            background-color: #ffffff;
+            background-color: var(--bg-white);
             padding: 2rem;
             border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
         }
-        h1, h2 {
+        header {
             text-align: center;
-            color: #2c3e50;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
         }
-        h1 { margin-bottom: 0.5rem; }
-        h2 { margin-bottom: 1.5rem; margin-top: 2.5rem; color: #34495e; }
+        h1 { margin: 0 0 1rem 0; }
+        h2 { margin: 2.5rem 0 1.5rem 0; color: var(--text-dark); text-align: center; }
+        #current-week-display { color: var(--text-light); font-weight: 500; font-size: 1.1rem; }
+        .search-box { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem; }
+        .search-input {
+            width: 200px;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 1rem;
+            text-transform: uppercase;
+        }
+        .search-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background-color: var(--primary-blue);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .search-button:hover { background-color: var(--primary-dark-blue); }
 
         #status-message {
             text-align: center;
             font-size: 1.2rem;
-            color: #7f8c8d;
+            color: var(--text-light);
             padding: 2rem 0;
         }
         table {
@@ -43,207 +77,259 @@
         th, td {
             padding: 12px 15px;
             text-align: left;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border-color);
         }
         thead th {
             background-color: #f8f9fa;
             font-weight: 600;
-            color: #495057;
+            color: var(--text-light);
             position: sticky;
-            top: 0; /* Makes header sticky during scroll */
+            top: 0;
         }
-        tr:nth-child(even) {
-            background-color: #f8f9fa;
-        }
-        tr:hover {
-            background-color: #e9ecef;
-        }
-        /* Style for the Change (%) column */
-        .positive {
-            color: #10b981; /* Green */
-            font-weight: 500;
-        }
-        .negative {
-            color: #ef4444; /* Red */
-            font-weight: 500;
-        }
-        /* Style for the table wrappers to allow scrolling on small screens */
-        .table-wrapper {
-            max-height: 60vh;
-            overflow-y: auto;
-        }
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { background-color: #e9ecef; }
+        th.sortable::after { content: ' \2195'; color: #ccc; } /* Up/Down arrow */
+        th.sort-asc::after { content: ' \25B2'; color: var(--primary-blue); } /* Up arrow */
+        th.sort-desc::after { content: ' \25BC'; color: var(--primary-blue); } /* Down arrow */
+
+        .positive { color: var(--positive-color); font-weight: 500; }
+        .negative { color: var(--negative-color); font-weight: 500; }
+        .table-wrapper { max-height: 60vh; overflow-y: auto; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>SPY - Weekly Data Analysis</h1>
+        <header>
+            <h1>Interactive Weekly Stock Analysis</h1>
+            <div id="current-week-display"></div>
+            <div class="search-box">
+                <input type="text" id="symbolInput" class="search-input" placeholder="e.g., AAPL, NVDA" value="SPY">
+                <button id="searchButton" class="search-button">Search</button>
+            </div>
+        </header>
         
-        <!-- This message will show while data is loading or if an error occurs -->
-        <div id="status-message">Loading & analyzing historical data...</div>
+        <div id="status-message">Loading initial data for SPY...</div>
 
-        <!-- Summary Table Section -->
+        <!-- Sections will be hidden until data is ready -->
         <div id="summarySection" style="display: none;">
-            <h2>Weekly Performance Summary (All Years)</h2>
+            <h2>Weekly Performance Summary (<span id="summary-symbol"></span>)</h2>
             <div class="table-wrapper">
                 <table id="summaryTable">
                     <thead>
                         <tr>
-                            <th>Week #</th>
-                            <th>Average Return (%)</th>
-                            <th>Profitable Weeks (%)</th>
+                            <th class="sortable" data-column="weekNumber">Week #</th>
+                            <th class="sortable" data-column="avgReturn">Average Return (%)</th>
+                            <th class="sortable" data-column="profitablePct">Profitable Weeks (%)</th>
+                            <th class="sortable" data-column="avgProfit">Avg. Profit (%)</th>
+                            <th class="sortable" data-column="avgLoss">Avg. Loss (%)</th>
                         </tr>
                     </thead>
-                    <tbody id="summaryTableBody">
-                        <!-- Summary rows will be inserted here -->
-                    </tbody>
+                    <tbody id="summaryTableBody"></tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Detail Table Section -->
         <div id="detailSection" style="display: none;">
-            <h2>Historical Weekly Data</h2>
+            <h2>Historical Weekly Data (<span id="detail-symbol"></span>)</h2>
             <div class="table-wrapper">
                 <table id="detailTable">
                     <thead>
                         <tr>
-                            <th>Week #</th>
-                            <th>Date</th>
-                            <th>Open</th>
-                            <th>Close</th>
-                            <th>Change (%)</th>
+                            <th>Week #</th><th>Date</th><th>Open</th><th>Close</th><th>Change (%)</th>
                         </tr>
                     </thead>
-                    <tbody id="detailTableBody">
-                        <!-- Detail rows will be inserted here -->
-                    </tbody>
+                    <tbody id="detailTableBody"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
     <script>
-        /**
-         * Calculates the week number of the year for a given date string.
-         * @param {string} dateString - A date in 'YYYY-MM-DD' format.
-         * @returns {number} The week number (1-53).
-         */
+        // --- Helper Functions ---
         function getWeekOfYear(dateString) {
             const date = new Date(dateString);
             const startOfYear = new Date(date.getFullYear(), 0, 1);
             const days = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24));
-            return Math.ceil((days + 1) / 7);
+            return Math.ceil((days + startOfYear.getDay() + 1) / 7);
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        // --- Global State ---
+        let summaryData = [];
+        let currentSort = { column: 'weekNumber', direction: 'asc' };
+
+        // --- DOM Elements ---
+        const statusMessage = document.getElementById('status-message');
+        const summarySection = document.getElementById('summarySection');
+        const detailSection = document.getElementById('detailSection');
+        const summaryTableBody = document.getElementById('summaryTableBody');
+        const detailTableBody = document.getElementById('detailTableBody');
+        const symbolInput = document.getElementById('symbolInput');
+        const searchButton = document.getElementById('searchButton');
+        const currentWeekDisplay = document.getElementById('current-week-display');
+        const summarySymbol = document.getElementById('summary-symbol');
+        const detailSymbol = document.getElementById('detail-symbol');
+        const API_KEY = 'BH5QY6K3JQKBEMT7';
+
+        /**
+         * Core function to fetch, process, and display all data for a given symbol.
+         * @param {string} symbol The stock ticker to search for.
+         */
+        async function fetchAndDisplayData(symbol) {
+            statusMessage.textContent = `Fetching & analyzing data for ${symbol}...`;
+            statusMessage.style.display = 'block';
+            summarySection.style.display = 'none';
+            detailSection.style.display = 'none';
+
+            const API_URL = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=${symbol}&outputsize=full&apikey=${API_KEY}`;
             
-            // --- Configuration ---
-            const API_KEY = 'BH5QY6K3JQKBEMT7';
-            const SYMBOL = 'SPY';
-            const API_URL = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY_ADJUSTED&symbol=${SYMBOL}&outputsize=full&apikey=${API_KEY}`;
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
 
-            // Get references to all the HTML elements we'll need
-            const statusMessage = document.getElementById('status-message');
-            const summarySection = document.getElementById('summarySection');
-            const detailSection = document.getElementById('detailSection');
-            const summaryTableBody = document.getElementById('summaryTableBody');
-            const detailTableBody = document.getElementById('detailTableBody');
-            
-            // --- Data Fetching and Analysis ---
-            fetch(API_URL)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.Note || data["Error Message"]) {
-                        throw new Error(data.Note || data["Error Message"]);
+                if (data.Note || data["Error Message"]) {
+                    throw new Error(data.Note || data["Error Message"]);
+                }
+                const timeSeries = data['Weekly Adjusted Time Series'];
+                if (!timeSeries) {
+                    throw new Error(`No data found for symbol "${symbol}". It may be an invalid ticker.`);
+                }
+
+                // --- Stage 1: Process and Aggregate Data ---
+                const weeklyStats = {};
+                const dates = Object.keys(timeSeries);
+
+                dates.forEach(date => {
+                    const weeklyData = timeSeries[date];
+                    const open = parseFloat(weeklyData['1. open']);
+                    const close = parseFloat(weeklyData['4. close']);
+                    const weekNumber = getWeekOfYear(date);
+                    
+                    if (!weeklyStats[weekNumber]) {
+                        weeklyStats[weekNumber] = { returns: [], count: 0 };
                     }
-                    const timeSeries = data['Weekly Adjusted Time Series'];
-                    if (!timeSeries) {
-                        throw new Error("Could not find time series data in the API response.");
-                    }
-
-                    // --- Stage 1: Aggregate data for the summary table ---
-                    const weeklyStats = {}; // This object will hold stats for each week number (1-53)
-                    const dates = Object.keys(timeSeries);
-
-                    dates.forEach(date => {
-                        const weeklyData = timeSeries[date];
-                        const open = parseFloat(weeklyData['1. open']);
-                        const close = parseFloat(weeklyData['4. close']);
-                        const weekNumber = getWeekOfYear(date);
-                        
-                        // Initialize the stats for this week number if it's the first time we've seen it
-                        if (!weeklyStats[weekNumber]) {
-                            weeklyStats[weekNumber] = { totalReturn: 0, positiveWeeks: 0, count: 0 };
-                        }
-                        
-                        const changePercent = ((close - open) / open) * 100;
-                        
-                        // Add this week's data to our running totals
-                        weeklyStats[weekNumber].totalReturn += changePercent;
-                        weeklyStats[weekNumber].count++;
-                        if (changePercent > 0) {
-                            weeklyStats[weekNumber].positiveWeeks++;
-                        }
-                    });
-
-                    // --- Stage 2: Build the HTML for the summary table ---
-                    let summaryRowsHTML = '';
-                    // Loop from 1 to 53 to ensure the table is sorted by week number
-                    for (let i = 1; i <= 53; i++) {
-                        if (weeklyStats[i]) { // Check if we have data for this week number
-                            const stats = weeklyStats[i];
-                            const avgReturn = stats.totalReturn / stats.count;
-                            const profitablePct = (stats.positiveWeeks / stats.count) * 100;
-                            
-                            const avgReturnClass = avgReturn >= 0 ? 'positive' : 'negative';
-                            const formattedAvgReturn = (avgReturn > 0 ? '+' : '') + avgReturn.toFixed(2) + '%';
-                            
-                            summaryRowsHTML += `
-                                <tr>
-                                    <td>${i}</td>
-                                    <td class="${avgReturnClass}">${formattedAvgReturn}</td>
-                                    <td>${profitablePct.toFixed(2)}%</td>
-                                </tr>
-                            `;
-                        }
-                    }
-                    summaryTableBody.innerHTML = summaryRowsHTML;
-
-                    // --- Stage 3: Build the HTML for the detail table ---
-                    let detailRowsHTML = '';
-                    dates.forEach(date => {
-                        const weeklyData = timeSeries[date];
-                        const open = parseFloat(weeklyData['1. open']);
-                        const close = parseFloat(weeklyData['4. close']);
-                        const weekNumber = getWeekOfYear(date);
-                        
-                        const changePercent = ((close - open) / open) * 100;
-                        const changeClass = changePercent >= 0 ? 'positive' : 'negative';
-                        const formattedChange = (changePercent > 0 ? '+' : '') + changePercent.toFixed(2) + '%';
-                        
-                        detailRowsHTML += `
-                            <tr>
-                                <td>${weekNumber}</td>
-                                <td>${date}</td>
-                                <td>${open.toFixed(2)}</td>
-                                <td>${close.toFixed(2)}</td>
-                                <td class="${changeClass}">${formattedChange}</td>
-                            </tr>
-                        `;
-                    });
-                    detailTableBody.innerHTML = detailRowsHTML;
-
-                    // --- Stage 4: Display the content ---
-                    statusMessage.style.display = 'none';
-                    summarySection.style.display = 'block';
-                    detailSection.style.display = 'block';
-                })
-                .catch(error => {
-                    console.error('Error fetching or processing data:', error);
-                    statusMessage.textContent = `Error: ${error.message}. Please check your API key or try again later.`;
-                    statusMessage.style.color = 'red';
+                    
+                    const changePercent = ((close - open) / open) * 100;
+                    weeklyStats[weekNumber].returns.push(changePercent);
+                    weeklyStats[weekNumber].count++;
                 });
+
+                // --- Stage 2: Create Summary Data Array and Detail Table HTML ---
+                summaryData = []; // Clear previous summary data
+                let detailRowsHTML = '';
+                
+                for (let i = 1; i <= 53; i++) {
+                    if (weeklyStats[i]) {
+                        const stats = weeklyStats[i];
+                        const positiveReturns = stats.returns.filter(r => r > 0);
+                        const negativeReturns = stats.returns.filter(r => r < 0);
+                        
+                        summaryData.push({
+                            weekNumber: i,
+                            avgReturn: stats.returns.reduce((a, b) => a + b, 0) / stats.count,
+                            profitablePct: (positiveReturns.length / stats.count) * 100,
+                            avgProfit: positiveReturns.length ? positiveReturns.reduce((a, b) => a + b, 0) / positiveReturns.length : 0,
+                            avgLoss: negativeReturns.length ? negativeReturns.reduce((a, b) => a + b, 0) / negativeReturns.length : 0,
+                        });
+                    }
+                }
+                
+                dates.forEach(date => {
+                    const d = timeSeries[date];
+                    const open = parseFloat(d['1. open']), close = parseFloat(d['4. close']);
+                    const change = ((close - open) / open) * 100;
+                    detailRowsHTML += `<tr><td>${getWeekOfYear(date)}</td><td>${date}</td><td>${open.toFixed(2)}</td><td>${close.toFixed(2)}</td><td class="${change >= 0 ? 'positive' : 'negative'}">${(change > 0 ? '+' : '')}${change.toFixed(2)}%</td></tr>`;
+                });
+
+                // --- Stage 3: Render Tables and Display Content ---
+                detailTableBody.innerHTML = detailRowsHTML;
+                sortAndRenderSummaryTable(); // Initial sort and render
+                
+                summarySymbol.textContent = symbol;
+                detailSymbol.textContent = symbol;
+                statusMessage.style.display = 'none';
+                summarySection.style.display = 'block';
+                detailSection.style.display = 'block';
+
+            } catch (error) {
+                console.error('Fetch Error:', error);
+                statusMessage.textContent = `Error: ${error.message}`;
+                statusMessage.style.color = 'red';
+            }
+        }
+
+        /**
+         * Sorts the global summaryData and re-renders the summary table.
+         */
+        function sortAndRenderSummaryTable() {
+            const { column, direction } = currentSort;
+
+            summaryData.sort((a, b) => {
+                const valA = a[column];
+                const valB = b[column];
+                if (valA < valB) return direction === 'asc' ? -1 : 1;
+                if (valA > valB) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            let summaryRowsHTML = '';
+            summaryData.forEach(stats => {
+                const avgReturnClass = stats.avgReturn >= 0 ? 'positive' : 'negative';
+                summaryRowsHTML += `
+                    <tr>
+                        <td>${stats.weekNumber}</td>
+                        <td class="${avgReturnClass}">${(stats.avgReturn > 0 ? '+' : '')}${stats.avgReturn.toFixed(2)}%</td>
+                        <td>${stats.profitablePct.toFixed(2)}%</td>
+                        <td class="positive">+${stats.avgProfit.toFixed(2)}%</td>
+                        <td class="negative">${stats.avgLoss.toFixed(2)}%</td>
+                    </tr>
+                `;
+            });
+            summaryTableBody.innerHTML = summaryRowsHTML;
+
+            // Update header styles for sort indicators
+            document.querySelectorAll('#summaryTable th.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.dataset.column === column) {
+                    th.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+        }
+
+        // --- Event Listeners and Initial Setup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Display current week number
+            currentWeekDisplay.textContent = `Current Week: ${getWeekOfYear(new Date().toISOString().split('T')[0])}`;
+
+            // Handle search button click
+            searchButton.addEventListener('click', () => {
+                const symbol = symbolInput.value.trim().toUpperCase();
+                if (symbol) fetchAndDisplayData(symbol);
+            });
+
+            // Handle 'Enter' key press in input box
+            symbolInput.addEventListener('keyup', (event) => {
+                if (event.key === 'Enter') {
+                    searchButton.click();
+                }
+            });
+
+            // Add sorting functionality to summary table headers
+            document.querySelectorAll('#summaryTable th.sortable').forEach(header => {
+                header.addEventListener('click', () => {
+                    const column = header.dataset.column;
+                    if (currentSort.column === column) {
+                        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        currentSort.column = column;
+                        currentSort.direction = 'asc';
+                    }
+                    sortAndRenderSummaryTable();
+                });
+            });
+
+            // Initial data load for default symbol
+            fetchAndDisplayData('SPY');
         });
     </script>
 
