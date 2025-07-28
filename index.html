@@ -54,7 +54,10 @@
 
         #status-message { text-align: center; font-size: 1.2rem; color: var(--text-light); padding: 2rem 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        /* MODIFIED: Right-align numeric data for readability */
+        th, td { padding: 12px 15px; text-align: right; border-bottom: 1px solid var(--border-color); }
+        /* MODIFIED: Keep first column left-aligned */
+        th:first-child, td:first-child { text-align: left; }
         thead th { background-color: #f8f9fa; font-weight: 600; color: var(--text-light); position: sticky; top: 0; }
         th.sortable { cursor: pointer; user-select: none; }
         th.sortable:hover { background-color: #e9ecef; }
@@ -107,10 +110,16 @@
                 <table id="summaryTable">
                     <thead>
                         <tr>
+                            <!-- MODIFIED: Added all new columns with tooltips and sort attributes -->
                             <th class="sortable" data-column="weekNumber" title="Week of the year (1-53)">Week #</th>
                             <th class="sortable" data-column="count" title="Number of weeks that match the filter criteria">Count</th>
-                            <th class="sortable" data-column="avgReturn" title="The average return for weeks matching the criteria">Avg. Return (%)</th>
-                            <th class="sortable" data-column="profitablePct" title="The percentage of matching weeks that were profitable">Profitable Weeks (%)</th>
+                            <th class="sortable" data-column="profitablePct" title="The percentage of matching weeks that were profitable">Win Rate (%)</th>
+                            <th class="sortable" data-column="avgReturn" title="The average return for weeks matching the criteria">Avg Return (%)</th>
+                            <th class="sortable" data-column="stdDev" title="Standard Deviation of returns. A measure of volatility/risk.">Std. Dev. (%)</th>
+                            <th class="sortable" data-column="sharpeRatio" title="Risk-adjusted return (Avg Return / Std Dev). Higher is better.">Sharpe Ratio</th>
+                            <th class="sortable" data-column="profitFactor" title="Gross gains divided by gross losses. Higher is better.">Profit Factor</th>
+                            <th class="sortable" data-column="maxReturn" title="The best single weekly return observed.">Best Week (%)</th>
+                            <th class="sortable" data-column="minReturn" title="The worst single weekly return observed.">Worst Week (%)</th>
                         </tr>
                     </thead>
                     <tbody id="summaryTableBody"></tbody>
@@ -140,6 +149,23 @@
             date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
             const week1 = new Date(date.getFullYear(), 0, 4);
             return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        }
+
+        // --- NEW: Financial Calculation Helpers ---
+        function calculateStdDev(array) {
+            if (array.length < 2) return 0;
+            const n = array.length;
+            const mean = array.reduce((a, b) => a + b) / n;
+            const variance = array.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1); // Sample standard deviation
+            return Math.sqrt(variance);
+        }
+
+        function calculateProfitFactor(returns) {
+            const gains = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
+            const losses = Math.abs(returns.filter(r => r < 0).reduce((a, b) => a + b, 0));
+            if (losses === 0) return Infinity; // No losses means infinite profit factor
+            if (gains === 0) return 0; // No gains means zero profit factor
+            return gains / losses;
         }
 
         // --- Global State ---
@@ -177,18 +203,11 @@
                 const timeSeries = data['Weekly Adjusted Time Series'];
                 if (!timeSeries) throw new Error(`No data found for symbol "${symbol}".`);
                 
-                // Pre-process all data into a chronological array with calculated returns
                 fullHistoricalData = Object.keys(timeSeries).map(date => {
                     const open = parseFloat(timeSeries[date]['1. open']);
                     const close = parseFloat(timeSeries[date]['4. close']);
-                    return {
-                        date,
-                        weekNumber: getWeekOfYear(date),
-                        open,
-                        close,
-                        return: ((close - open) / open) * 100
-                    };
-                }).reverse(); // Ensure data is oldest to newest for processing
+                    return { date, weekNumber: getWeekOfYear(date), open, close, return: ((close - open) / open) * 100 };
+                }).reverse();
 
                 processAndDisplayData();
             } catch (error) {
@@ -197,11 +216,7 @@
         }
 
         function processAndDisplayData() {
-            statusMessage.textContent = `Analyzing data...`;
-            statusMessage.style.display = 'block';
-            [summarySection, detailSection].forEach(el => el.style.display = 'none');
-
-            // 1. Filter by Time Period
+            // ... Filtering logic remains the same ...
             let timeFilteredData = [...fullHistoricalData];
             if (activeTimeFilter === '5y') {
                 const fiveYearsAgo = new Date();
@@ -209,14 +224,13 @@
                 timeFilteredData = fullHistoricalData.filter(d => new Date(d.date) >= fiveYearsAgo);
             }
 
-            // 2. Apply Conditional Filter
             const dataToAnalyze = [];
             if (activeConditionFilter === 'all') {
                 dataToAnalyze.push(...timeFilteredData);
             } else {
                 for (let i = 1; i < timeFilteredData.length; i++) {
                     const prevWeekReturn = timeFilteredData[i-1].return;
-                    if (activeConditionFilter === 'up' && prevWeekReturn > 0) {
+                    if (activeConditionFilter === 'up' && prevWeekReturn >= 0) { // Changed from > to >=
                         dataToAnalyze.push(timeFilteredData[i]);
                     } else if (activeConditionFilter === 'down' && prevWeekReturn < 0) {
                         dataToAnalyze.push(timeFilteredData[i]);
@@ -232,21 +246,30 @@
                 weeklyStats[weekNumber].returns.push(ret);
             });
 
+            // MODIFIED: Calculate all new metrics during aggregation
             summaryData = [];
             for (let i = 1; i <= 53; i++) {
                 if (weeklyStats[i]?.returns.length > 0) {
                     const { returns } = weeklyStats[i];
-                    const positiveReturns = returns.filter(r => r > 0);
+                    const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+                    const stdDev = calculateStdDev(returns);
+
                     summaryData.push({
                         weekNumber: i,
                         count: returns.length,
-                        avgReturn: returns.reduce((a, b) => a + b, 0) / returns.length,
-                        profitablePct: (positiveReturns.length / returns.length) * 100,
+                        profitablePct: (returns.filter(r => r > 0).length / returns.length) * 100,
+                        avgReturn: avgReturn,
+                        // NEW METRICS
+                        stdDev: stdDev,
+                        sharpeRatio: stdDev > 0 ? avgReturn / stdDev : 0,
+                        profitFactor: calculateProfitFactor(returns),
+                        maxReturn: Math.max(...returns),
+                        minReturn: Math.min(...returns)
                     });
                 }
             }
 
-            // 4. Build Detail Table (newest first)
+            // 4. Build Detail Table
             let detailRowsHTML = '';
             dataToAnalyze.slice().reverse().forEach(d => {
                 const changeClass = d.return >= 0 ? 'positive' : 'negative';
@@ -273,10 +296,27 @@
                 if (valA > valB) return direction === 'asc' ? 1 : -1;
                 return 0;
             });
+
+            // MODIFIED: Updated rendering to include the 5 new columns and their formatting
             summaryTableBody.innerHTML = summaryData.map(stats => {
                 const avgReturnClass = stats.avgReturn >= 0 ? 'positive' : 'negative';
-                return `<tr><td>${stats.weekNumber}</td><td>${stats.count}</td><td class="${avgReturnClass}">${(stats.avgReturn > 0 ? '+' : '')}${stats.avgReturn.toFixed(2)}%</td><td>${stats.profitablePct.toFixed(2)}%</td></tr>`;
+                const maxReturnClass = stats.maxReturn >= 0 ? 'positive' : 'negative';
+                const minReturnClass = stats.minReturn >= 0 ? 'positive' : 'negative';
+                const profitFactorText = stats.profitFactor === Infinity ? '∞' : stats.profitFactor.toFixed(2);
+
+                return `<tr>
+                    <td>${stats.weekNumber}</td>
+                    <td>${stats.count}</td>
+                    <td>${stats.profitablePct.toFixed(2)}%</td>
+                    <td class="${avgReturnClass}">${(stats.avgReturn > 0 ? '+' : '')}${stats.avgReturn.toFixed(2)}%</td>
+                    <td>${stats.stdDev.toFixed(2)}%</td>
+                    <td>${stats.sharpeRatio.toFixed(2)}</td>
+                    <td>${profitFactorText}</td>
+                    <td class="${maxReturnClass}">${(stats.maxReturn > 0 ? '+' : '')}${stats.maxReturn.toFixed(2)}%</td>
+                    <td class="${minReturnClass}">${(stats.minReturn > 0 ? '+' : '')}${stats.minReturn.toFixed(2)}%</td>
+                </tr>`;
             }).join('');
+
             document.querySelectorAll('#summaryTable th.sortable').forEach(th => {
                 th.classList.remove('sort-asc', 'sort-desc');
                 if (th.dataset.column === column) th.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
@@ -299,23 +339,18 @@
             searchButton.addEventListener('click', handleSearch);
             symbolInput.addEventListener('keyup', e => e.key === 'Enter' && handleSearch());
 
-            // Time Period Filter Logic
+            // ... Filter logic remains the same ...
             [filterAllTimeBtn, filter5YBtn].forEach(btn => {
                 btn.addEventListener('click', () => {
-                    filterAllTimeBtn.classList.remove('active');
-                    filter5YBtn.classList.remove('active');
+                    filterAllTimeBtn.classList.remove('active'); filter5YBtn.classList.remove('active');
                     btn.classList.add('active');
                     activeTimeFilter = btn.id === 'filter5Y' ? '5y' : 'all';
                     if (fullHistoricalData.length) processAndDisplayData();
                 });
             });
-
-            // Condition Filter Logic
             [filterAllWeeksBtn, filterFollowingUpBtn, filterFollowingDownBtn].forEach(btn => {
                 btn.addEventListener('click', () => {
-                    filterAllWeeksBtn.classList.remove('active');
-                    filterFollowingUpBtn.classList.remove('active');
-                    filterFollowingDownBtn.classList.remove('active');
+                    filterAllWeeksBtn.classList.remove('active'); filterFollowingUpBtn.classList.remove('active'); filterFollowingDownBtn.classList.remove('active');
                     btn.classList.add('active');
                     if (btn.id === 'filterFollowingUp') activeConditionFilter = 'up';
                     else if (btn.id === 'filterFollowingDown') activeConditionFilter = 'down';
@@ -324,6 +359,7 @@
                 });
             });
             
+            // MODIFIED: Sorting logic now includes the new columns
             document.querySelectorAll('#summaryTable th.sortable').forEach(header => {
                 header.addEventListener('click', () => {
                     const column = header.dataset.column;
@@ -331,7 +367,9 @@
                         currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
                     } else {
                         currentSort.column = column;
-                        currentSort.direction = (['avgReturn', 'profitablePct', 'count'].includes(column)) ? 'desc' : 'asc';
+                        // Default to descending for metrics where higher is better
+                        const descDefault = ['count', 'profitablePct', 'avgReturn', 'stdDev', 'sharpeRatio', 'profitFactor', 'maxReturn', 'minReturn'];
+                        currentSort.direction = descDefault.includes(column) ? 'desc' : 'asc';
                     }
                     sortAndRenderSummaryTable();
                 });
