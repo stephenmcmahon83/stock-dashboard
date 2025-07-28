@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- CONFIGURATION ---
     // IMPORTANT: Replace this with your NEW, secret Tiingo API key.
-    const TIINGO_API_KEY = 'PASTE_YOUR_NEW_TIINGO_API_KEY_HERE';
+    const TIINGO_API_KEY = 'e071a27687ada2fc663b85f6b49a9b50116f7ab9';
 
     // --- DOM Elements ---
     const tickerInput = document.getElementById('tickerInput');
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     filterRadios.forEach(radio => radio.addEventListener('change', runAnalysis));
     
     // Initial check for API Key
-    if (TIINGO_API_KEY === 'PASTE_YOUR_NEW_TIINGO_API_KEY_HERE') {
+    if (TIINGO_API_KEY === 'e071a27687ada2fc663b85f6b49a9b50116f7ab9') {
         displayMessage('ERROR: Please update the TIINGO_API_KEY in script.js', 'error');
     } else {
         handleFetchRequest(); // Initial fetch on page load
