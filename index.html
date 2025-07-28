@@ -118,7 +118,9 @@
                 <table id="summaryTable">
                     <thead>
                         <tr>
+                            <!-- ADDED NEW HEADER FOR COUNT -->
                             <th class="sortable" data-column="weekNumber">Week #</th>
+                            <th class="sortable" data-column="count">Count</th>
                             <th class="sortable" data-column="avgReturn">Average Return (%)</th>
                             <th class="sortable" data-column="profitablePct">Profitable Weeks (%)</th>
                         </tr>
@@ -134,7 +136,11 @@
                 <table id="detailTable">
                     <thead>
                         <tr>
-                            <th>Week #</th><th>Date</th><th>Open</th><th>Close</th><th>Change (%)</th>
+                            <th>Week #</th>
+                            <th>Date</th>
+                            <th>Open</th>
+                            <th>Close</th>
+                            <th>Weekly Return (%)</th>
                         </tr>
                     </thead>
                     <tbody id="detailTableBody"></tbody>
@@ -149,7 +155,6 @@
             const date = new Date(dateString);
             const startOfYear = new Date(date.getFullYear(), 0, 1);
             const days = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24));
-            // Standard ISO 8601 week number calculation adjustment
             return Math.ceil((days + startOfYear.getDay() + 1) / 7);
         }
 
@@ -170,10 +175,6 @@
         const detailSymbol = document.getElementById('detail-symbol');
         const API_KEY = 'BH5QY6K3JQKBEMT7';
 
-        /**
-         * Core function to fetch, process, and display all data for a given symbol.
-         * @param {string} symbol The stock ticker to search for.
-         */
         async function fetchAndDisplayData(symbol) {
             statusMessage.textContent = `Fetching & analyzing data for ${symbol}...`;
             statusMessage.style.display = 'block';
@@ -194,7 +195,6 @@
                     throw new Error(`No data found for symbol "${symbol}". It may be an invalid ticker.`);
                 }
 
-                // --- Stage 1: Process and Aggregate Data ---
                 const weeklyStats = {};
                 const dates = Object.keys(timeSeries);
 
@@ -212,8 +212,7 @@
                     weeklyStats[weekNumber].returns.push(changePercent);
                 });
 
-                // --- Stage 2: Create Summary Data Array and Detail Table HTML ---
-                summaryData = []; // Clear previous summary data
+                summaryData = [];
                 let detailRowsHTML = '';
                 
                 for (let i = 1; i <= 53; i++) {
@@ -221,8 +220,10 @@
                         const returns = weeklyStats[i].returns;
                         const positiveReturns = returns.filter(r => r > 0);
                         
+                        // ADDED THE COUNT PROPERTY TO THE SUMMARY OBJECT
                         summaryData.push({
                             weekNumber: i,
+                            count: returns.length,
                             avgReturn: returns.reduce((a, b) => a + b, 0) / returns.length,
                             profitablePct: (positiveReturns.length / returns.length) * 100
                         });
@@ -236,9 +237,8 @@
                     detailRowsHTML += `<tr><td>${getWeekOfYear(date)}</td><td>${date}</td><td>${open.toFixed(2)}</td><td>${close.toFixed(2)}</td><td class="${change >= 0 ? 'positive' : 'negative'}">${(change > 0 ? '+' : '')}${change.toFixed(2)}%</td></tr>`;
                 });
 
-                // --- Stage 3: Render Tables and Display Content ---
                 detailTableBody.innerHTML = detailRowsHTML;
-                sortAndRenderSummaryTable(); // Initial sort and render
+                sortAndRenderSummaryTable();
                 
                 summarySymbol.textContent = symbol;
                 detailSymbol.textContent = symbol;
@@ -253,9 +253,6 @@
             }
         }
 
-        /**
-         * Sorts the global summaryData and re-renders the summary table.
-         */
         function sortAndRenderSummaryTable() {
             const { column, direction } = currentSort;
 
@@ -270,9 +267,11 @@
             let summaryRowsHTML = '';
             summaryData.forEach(stats => {
                 const avgReturnClass = stats.avgReturn >= 0 ? 'positive' : 'negative';
+                // ADDED THE NEW CELL FOR THE COUNT
                 summaryRowsHTML += `
                     <tr>
                         <td>${stats.weekNumber}</td>
+                        <td>${stats.count}</td>
                         <td class="${avgReturnClass}">${(stats.avgReturn > 0 ? '+' : '')}${stats.avgReturn.toFixed(2)}%</td>
                         <td>${stats.profitablePct.toFixed(2)}%</td>
                     </tr>
@@ -280,7 +279,6 @@
             });
             summaryTableBody.innerHTML = summaryRowsHTML;
 
-            // Update header styles for sort indicators
             document.querySelectorAll('#summaryTable th.sortable').forEach(th => {
                 th.classList.remove('sort-asc', 'sort-desc');
                 if (th.dataset.column === column) {
@@ -289,25 +287,20 @@
             });
         }
 
-        // --- Event Listeners and Initial Setup ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Display current week number
             currentWeekDisplay.textContent = `Current Week: ${getWeekOfYear(new Date().toISOString().split('T')[0])}`;
 
-            // Handle search button click
             searchButton.addEventListener('click', () => {
                 const symbol = symbolInput.value.trim().toUpperCase();
                 if (symbol) fetchAndDisplayData(symbol);
             });
 
-            // Handle 'Enter' key press in input box
             symbolInput.addEventListener('keyup', (event) => {
                 if (event.key === 'Enter') {
                     searchButton.click();
                 }
             });
 
-            // Add sorting functionality to summary table headers
             document.querySelectorAll('#summaryTable th.sortable').forEach(header => {
                 header.addEventListener('click', () => {
                     const column = header.dataset.column;
@@ -315,17 +308,16 @@
                         currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
                     } else {
                         currentSort.column = column;
-                        currentSort.direction = 'asc';
-                         // Default to sorting by highest return/profitability first
-                        if (column === 'avgReturn' || column === 'profitablePct') {
+                        if (column === 'avgReturn' || column === 'profitablePct' || column === 'count') {
                             currentSort.direction = 'desc';
+                        } else {
+                            currentSort.direction = 'asc';
                         }
                     }
                     sortAndRenderSummaryTable();
                 });
             });
 
-            // Initial data load for default symbol
             fetchAndDisplayData('SPY');
         });
     </script>
