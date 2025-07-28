@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const rawData = await fetchYahooData(ticker);
             if (!rawData || rawData.length === 0) {
-                displayMessage(`No weekly data found for ${ticker}.`, 'info');
+                displayMessage(`No weekly data found for ${ticker}. It may be an invalid ticker.`, 'info');
                 return;
             }
 
@@ -73,6 +73,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const result = chartData.chart.result[0];
         const timestamps = result.timestamp;
         const quotes = result.indicators.quote[0];
+
+        if (!timestamps) return []; // Handle cases where a ticker is valid but has no data
 
         const processedData = [];
         for (let i = 0; i < timestamps.length; i++) {
@@ -143,11 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Populates the main details table with historical data.
-     * @param {Array} rawData - The array of processed weekly data.
      */
     function populateDetailsTable(rawData) {
-        // Display newest data first
-        const displayData = [...rawData].reverse();
+        const displayData = [...rawData].reverse(); // Display newest data first
         
         displayData.forEach(d => {
             const row = stockDataTableBody.insertRow();
@@ -163,7 +163,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Populates the summary statistics table.
-     * @param {Object} summaryStats - The object of calculated stats.
      */
     function populateSummaryTable(summaryStats) {
         for (let i = 1; i <= 53; i++) {
@@ -190,7 +189,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Makes a given HTML table sortable.
-     * @param {HTMLTableElement} table - The table element to make sortable.
      */
     function makeTableSortable(table) {
         const headers = table.querySelectorAll('th');
@@ -201,12 +199,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tbody = table.querySelector('tbody');
                 const rows = Array.from(tbody.querySelectorAll('tr'));
 
-                // Sort the rows
                 const sortedRows = rows.sort((a, b) => {
                     let valA = a.querySelector(`td:nth-child(${index + 1})`).textContent;
                     let valB = b.querySelector(`td:nth-child(${index + 1})`).textContent;
                     
-                    // Clean and convert to number if possible
                     const numA = parseFloat(valA.replace(/[^0-9.-]+/g, ""));
                     const numB = parseFloat(valB.replace(/[^0-9.-]+/g, ""));
 
@@ -217,27 +213,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
 
-                // Remove old sort classes
                 headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
-                // Add new class
                 header.classList.toggle('sort-asc', !isAsc);
                 header.classList.toggle('sort-desc', isAsc);
 
-                // Re-append sorted rows
                 sortedRows.forEach(row => tbody.appendChild(row));
             });
         });
     }
 
     // --- HELPER FUNCTIONS ---
+
+    /**
+     * THE CORRECTED FUNCTION
+     * Calculates a simple week number (1-53) for a given Date object, using UTC to avoid timezone errors.
+     * @param {Date} date - The date object.
+     * @returns {number} The week number.
+     */
     function getSimpleWeekNumber(date) {
+        // To avoid timezone bugs, we perform all calculations using UTC components.
         const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-        const diff = date - yearStart;
+        const currentInstance = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        
+        const diff = currentInstance - yearStart;
         const oneDay = 1000 * 60 * 60 * 24;
         const dayOfYear = Math.floor(diff / oneDay);
+        
         return Math.ceil((dayOfYear + 1) / 7);
     }
 
     function displayMessage(msg, type) {
         messageDiv.textContent = msg;
         messageDiv.className = `message ${type}`;
+    }
+});
