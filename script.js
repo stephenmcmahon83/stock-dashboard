@@ -7,15 +7,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const stockDataTableBody = document.getElementById('stockDataTableBody');
     const summaryTable = document.getElementById('summaryTable');
     const detailsTable = document.getElementById('detailsTable');
+    const filterRadios = document.querySelectorAll('input[name="filter"]');
 
-    // Event Listeners
+    // State variable to hold the complete, unfiltered data
+    let fullDataSet = [];
+
+    // --- EVENT LISTENERS ---
     fetchDataButton.addEventListener('click', handleFetchRequest);
+    filterRadios.forEach(radio => radio.addEventListener('change', runAnalysis));
     
     // Initial fetch on page load
     handleFetchRequest();
 
     /**
-     * Main handler to orchestrate the fetching and processing.
+     * Main handler to fetch data from the API.
+     * This is called only when the "Analyze" button is clicked.
      */
     async function handleFetchRequest() {
         const ticker = tickerInput.value.trim().toUpperCase();
@@ -25,26 +31,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         displayMessage(`Fetching all weekly data for ${ticker}...`, 'info');
-        summaryTableBody.innerHTML = '';
-        stockDataTableBody.innerHTML = '';
-
+        fullDataSet = []; // Clear old data
+        
         try {
-            const rawData = await fetchYahooData(ticker);
-            if (!rawData || rawData.length === 0) {
-                displayMessage(`No weekly data found for ${ticker}. It may be an invalid ticker.`, 'info');
-                return;
-            }
-
-            displayMessage('Calculating statistics...', 'info');
-            const summaryStats = calculateSummaryStatistics(rawData);
-            
-            populateDetailsTable(rawData);
-            populateSummaryTable(summaryStats);
-
-            makeTableSortable(detailsTable);
-            makeTableSortable(summaryTable);
-            
-            displayMessage('', ''); // Clear message on success
+            // Fetch data and store it in our state variable
+            fullDataSet = await fetchYahooData(ticker);
+            // Run the analysis with the newly fetched data
+            runAnalysis(); 
         } catch (error) {
             console.error('Error in handleFetchRequest:', error);
             displayMessage(error.message, 'error');
@@ -52,63 +45,107 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Runs the entire analysis pipeline on the current dataset based on the selected filter.
+     * This is called after fetching data OR when a filter is changed.
+     */
+    function runAnalysis() {
+        if (fullDataSet.length === 0) {
+            displayMessage('No data available. Please fetch data for a ticker.', 'info');
+            return;
+        }
+
+        displayMessage('Applying filters and calculating statistics...', 'info');
+        summaryTableBody.innerHTML = '';
+        stockDataTableBody.innerHTML = '';
+
+        const filteredData = applyFilter(fullDataSet);
+
+        if (filteredData.length === 0) {
+            displayMessage('No data matches the selected filter.', 'info');
+            return;
+        }
+
+        const summaryStats = calculateSummaryStatistics(filteredData);
+        
+        populateDetailsTable(filteredData);
+        populateSummaryTable(summaryStats);
+
+        makeTableSortable(detailsTable);
+        makeTableSortable(summaryTable);
+        
+        displayMessage('', ''); // Clear message on success
+    }
+
+    /**
+     * Filters the full dataset based on the currently selected radio button.
+     * @param {Array} data - The complete, unfiltered dataset.
+     * @returns {Array} The filtered dataset.
+     */
+    function applyFilter(data) {
+        const filterValue = document.querySelector('input[name="filter"]:checked').value;
+        
+        if (filterValue === 'all') {
+            return data;
+        }
+
+        const filtered = [];
+        // Start from the second item since the first has no preceding week
+        for (let i = 1; i < data.length; i++) {
+            const previousWeekReturn = data[i-1].weeklyReturn;
+            if (filterValue === 'after-up' && previousWeekReturn > 0) {
+                filtered.push(data[i]);
+            } else if (filterValue === 'after-down' && previousWeekReturn < 0) {
+                filtered.push(data[i]);
+            }
+        }
+        return filtered;
+    }
+
+    /**
      * Fetches and processes data from the Yahoo Finance endpoint.
-     * @param {string} ticker The stock ticker symbol.
-     * @returns {Promise<Array>} A promise that resolves to an array of processed weekly data.
+     * Returns data sorted from OLDEST to NEWEST.
      */
     async function fetchYahooData(ticker) {
-        const period1 = 0; // Start of Unix time to get all data
+        // ... (This function remains the same as before, but ensure it returns data oldest-to-newest for the filter logic)
+        const period1 = 0;
         const period2 = Math.floor(Date.now() / 1000);
         const yahooEndpoint = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1wk&events=history`;
-        
-        // =========================================================================
-        // === THIS IS THE ONLY LINE THAT HAS CHANGED. SWITCHED TO A NEW PROXY. ===
-        // =========================================================================
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(yahooEndpoint)}`;
 
         const response = await fetch(proxyUrl);
         if (!response.ok) throw new Error(`Proxy server error: ${response.status}`);
-
-        // corsproxy.io returns the data directly, not wrapped in a 'contents' object
         const chartData = await response.json(); 
-
         if (chartData.chart.error) throw new Error(`Yahoo Finance error: ${chartData.chart.error.description}`);
 
         const result = chartData.chart.result[0];
         const timestamps = result.timestamp;
+        if (!timestamps) return [];
         const quotes = result.indicators.quote[0];
-
-        if (!timestamps) return []; // Handle cases where a ticker is valid but has no data
 
         const processedData = [];
         for (let i = 0; i < timestamps.length; i++) {
             const open = quotes.open[i];
             const close = quotes.close[i];
-
             if (open === null || close === null || open === 0) continue;
-
             const date = new Date(timestamps[i] * 1000);
-            const weeklyReturn = (close - open) / open;
-
             processedData.push({
                 date: date,
                 open: open,
                 close: close,
                 weekNumber: getSimpleWeekNumber(date),
-                weeklyReturn: weeklyReturn
+                weeklyReturn: (close - open) / open
             });
         }
-        return processedData;
+        return processedData; // Returned sorted oldest to newest
     }
 
-    //
-    // The rest of the file is identical to the previous version and is included for completeness.
-    //
-    
-    function calculateSummaryStatistics(rawData) {
+    /**
+     * Aggregates weekly data and computes statistics.
+     */
+    function calculateSummaryStatistics(data) {
+        // ... (This function is updated to calculate Win Rate)
         const weeklyGroups = {};
-
-        rawData.forEach(d => {
+        data.forEach(d => {
             if (!weeklyGroups[d.weekNumber]) {
                 weeklyGroups[d.weekNumber] = { returns: [] };
             }
@@ -121,6 +158,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const count = returns.length;
             if (count === 0) continue;
 
+            const positiveTrades = returns.filter(r => r > 0).length;
+            const winRate = positiveTrades / count;
+
             const sum = returns.reduce((a, b) => a + b, 0);
             const avgReturn = sum / count;
             const stdDev = Math.sqrt(returns.map(x => Math.pow(x - avgReturn, 2)).reduce((a, b) => a + b, 0) / count);
@@ -130,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const sharpeRatio = stdDev === 0 ? 0 : (avgReturn / stdDev) * Math.sqrt(52);
 
             summary[weekNum] = {
-                count, avgReturn, profitFactor, sharpeRatio, stdDev,
+                count, winRate, avgReturn, profitFactor, sharpeRatio, stdDev,
                 maxReturn: Math.max(...returns),
                 minReturn: Math.min(...returns)
             };
@@ -138,8 +178,44 @@ document.addEventListener('DOMContentLoaded', () => {
         return summary;
     }
 
-    function populateDetailsTable(rawData) {
-        const displayData = [...rawData].reverse();
+    /**
+     * Populates the summary statistics table.
+     */
+    function populateSummaryTable(summaryStats) {
+        // ... (This function is updated to add the new column's data)
+        for (let i = 1; i <= 53; i++) {
+            const stats = summaryStats[i];
+            if (!stats) continue;
+            const row = summaryTableBody.insertRow();
+            row.insertCell().textContent = i;
+            row.insertCell().textContent = stats.count;
+            // New % Profitable cell
+            const winRateCell = row.insertCell();
+            winRateCell.textContent = `${(stats.winRate * 100).toFixed(1)}%`;
+            winRateCell.className = stats.winRate >= 0.5 ? 'positive' : 'negative';
+            
+            const avgReturnCell = row.insertCell();
+            avgReturnCell.textContent = `${(stats.avgReturn * 100).toFixed(2)}%`;
+            avgReturnCell.className = stats.avgReturn >= 0 ? 'positive' : 'negative';
+            
+            row.insertCell().textContent = isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞';
+            row.insertCell().textContent = stats.sharpeRatio.toFixed(2);
+            row.insertCell().textContent = (stats.stdDev * 100).toFixed(2) + '%';
+            
+            const maxCell = row.insertCell();
+            maxCell.textContent = `${(stats.maxReturn * 100).toFixed(2)}%`;
+            maxCell.className = 'positive';
+            const minCell = row.insertCell();
+            minCell.textContent = `${(stats.minReturn * 100).toFixed(2)}%`;
+            minCell.className = 'negative';
+        }
+    }
+
+    /**
+     * Populates the details table. Now displays newest-first.
+     */
+    function populateDetailsTable(data) {
+        const displayData = [...data].reverse(); // Display newest data first
         displayData.forEach(d => {
             const row = stockDataTableBody.insertRow();
             row.insertCell().textContent = d.weekNumber;
@@ -152,28 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function populateSummaryTable(summaryStats) {
-        for (let i = 1; i <= 53; i++) {
-            const stats = summaryStats[i];
-            if (!stats) continue;
-            const row = summaryTableBody.insertRow();
-            row.insertCell().textContent = i;
-            row.insertCell().textContent = stats.count;
-            const avgReturnCell = row.insertCell();
-            avgReturnCell.textContent = `${(stats.avgReturn * 100).toFixed(2)}%`;
-            avgReturnCell.className = stats.avgReturn >= 0 ? 'positive' : 'negative';
-            row.insertCell().textContent = isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : '∞';
-            row.insertCell().textContent = stats.sharpeRatio.toFixed(2);
-            row.insertCell().textContent = (stats.stdDev * 100).toFixed(2) + '%';
-            const maxCell = row.insertCell();
-            maxCell.textContent = `${(stats.maxReturn * 100).toFixed(2)}%`;
-            maxCell.className = 'positive';
-            const minCell = row.insertCell();
-            minCell.textContent = `${(stats.minReturn * 100).toFixed(2)}%`;
-            minCell.className = 'negative';
-        }
-    }
-
+    // --- UTILITY AND HELPER FUNCTIONS (UNCHANGED) ---
     function makeTableSortable(table) {
         const headers = table.querySelectorAll('th');
         headers.forEach((header, index) => {
