@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Stock Market Data (Yahoo Finance)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Weekly Stock Market Data Dashboard</h1>
+        <p>Enter a stock ticker (e.g., AAPL, MSFT, GOOG) to view its historical weekly open and close prices.</p>
+        
+        <div class="note warning">
+            <strong>Analyst's Warning:</strong> This demo fetches data directly from an unofficial Yahoo Finance endpoint via a public CORS proxy. This method is inherently unstable and can break without warning if Yahoo changes its API or the proxy goes down. It is not recommended for production use. For reliable data, a server-side solution with an official API provider is the professional standard.
+        </div>
+
+        <div class="input-section">
+            <label for="tickerInput">Stock Ticker:</label>
+            <input type="text" id="tickerInput" placeholder="e.g., AAPL" value="AAPL">
+            <button id="fetchDataButton">Fetch Data</button>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Week #</th>
+                        <th>Date</th>
+                        <th>Open Price</th>
+                        <th>Close Price</th>
+                    </tr>
+                </thead>
+                <tbody id="stockDataTableBody">
+                    <!-- Data will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="script.js" defer></script>
+</body>
+</html>
