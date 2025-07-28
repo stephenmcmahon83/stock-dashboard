@@ -1,5 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM Elements
+    // --- CONFIGURATION ---
+    // IMPORTANT: Replace this with your NEW, secret Tiingo API key.
+    const TIINGO_API_KEY = 'PASTE_YOUR_NEW_TIINGO_API_KEY_HERE';
+
+    // --- DOM Elements ---
     const tickerInput = document.getElementById('tickerInput');
     const fetchDataButton = document.getElementById('fetchDataButton');
     const messageDiv = document.getElementById('message');
@@ -15,7 +19,12 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchDataButton.addEventListener('click', handleFetchRequest);
     filterRadios.forEach(radio => radio.addEventListener('change', runAnalysis));
     
-    handleFetchRequest(); // Initial fetch on page load
+    // Initial check for API Key
+    if (TIINGO_API_KEY === 'PASTE_YOUR_NEW_TIINGO_API_KEY_HERE') {
+        displayMessage('ERROR: Please update the TIINGO_API_KEY in script.js', 'error');
+    } else {
+        handleFetchRequest(); // Initial fetch on page load
+    }
 
     /**
      * Main handler to fetch data from the API.
@@ -26,16 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
             displayMessage('Please enter a stock ticker.', 'error');
             return;
         }
-        displayMessage(`Fetching all weekly data for ${ticker}...`, 'info');
+        displayMessage(`Fetching all weekly data for ${ticker} from Tiingo...`, 'info');
         fullDataSet = [];
         
         try {
-            fullDataSet = await fetchYahooData(ticker);
+            fullDataSet = await fetchTiingoData(ticker);
             runAnalysis(); 
         } catch (error) {
             console.error('Error in handleFetchRequest:', error);
             displayMessage(error.message, 'error');
-            // Clear tables on error
             summaryTableBody.innerHTML = '';
             stockDataTableBody.innerHTML = '';
         }
@@ -45,17 +53,11 @@ document.addEventListener('DOMContentLoaded', () => {
      * Runs the entire analysis pipeline based on the selected filter.
      */
     function runAnalysis() {
-        if (fullDataSet.length === 0) {
-            // This case is now handled by the error message in handleFetchRequest
-            return;
-        }
-
+        if (fullDataSet.length === 0) { return; }
         displayMessage('Applying filters and calculating statistics...', 'info');
         summaryTableBody.innerHTML = '';
         stockDataTableBody.innerHTML = '';
-
         const filteredData = applyFilter(fullDataSet);
-
         if (filteredData.length === 0) {
             displayMessage('No data matches the selected filter.', 'info');
             return;
@@ -67,14 +69,13 @@ document.addEventListener('DOMContentLoaded', () => {
         makeTableSortable(summaryTable);
         displayMessage('', '');
     }
-
+    
     /**
      * Filters the full dataset based on the currently selected radio button.
      */
     function applyFilter(data) {
         const filterValue = document.querySelector('input[name="filter"]:checked').value;
         if (filterValue === 'all') return data;
-
         const filtered = [];
         for (let i = 1; i < data.length; i++) {
             const previousWeekReturn = data[i-1].weeklyReturn;
@@ -87,45 +88,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return filtered;
     }
 
+    // =========================================================================
+    // === THIS FUNCTION IS COMPLETELY REWRITTEN FOR THE TIINGO API ===
+    // =========================================================================
     /**
-     * Fetches and processes data from the Yahoo Finance endpoint.
+     * Fetches and processes weekly data from the Tiingo API.
+     * @param {string} ticker The stock ticker symbol.
+     * @returns {Promise<Array>} A promise that resolves to an array of processed weekly data, sorted oldest-to-newest.
      */
-    async function fetchYahooData(ticker) {
-        const period1 = 0;
-        const period2 = Math.floor(Date.now() / 1000);
-        const yahooEndpoint = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1wk&events=history`;
-        
-        // =========================================================================
-        // === THE MAIN FIX: SWITCHED TO A NEW, MORE RELIABLE PROXY. ===
-        // =========================================================================
-        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${yahooEndpoint}`;
+    async function fetchTiingoData(ticker) {
+        // Tiingo's API can resample to weekly data for us. We request data from a very early date.
+        const startDate = '1970-01-01'; 
+        const tiingoUrl = `https://api.tiingo.com/tiingo/daily/${ticker}/prices?startDate=${startDate}&resampleFreq=weekly&token=${TIINGO_API_KEY}`;
 
-        const response = await fetch(proxyUrl);
+        // No proxy needed! Tiingo's API supports direct requests from browsers (CORS enabled).
+        const response = await fetch(tiingoUrl);
+        const data = await response.json();
+
+        // Error handling for Tiingo API responses
         if (!response.ok) {
-            throw new Error(`Proxy Server Error: The proxy failed with status ${response.status}. Please try again later.`);
+            throw new Error(`Tiingo API Error: ${data.detail || 'Could not fetch data.'}`);
         }
-        const chartData = await response.json(); 
-
-        // =========================================================================
-        // === MORE ROBUST ERROR CHECKING FOR THE YAHOO RESPONSE ===
-        // =========================================================================
-        if (chartData.chart.error) {
-             throw new Error(`Yahoo Finance Error: ${chartData.chart.error.description}`);
-        }
-        if (!chartData.chart.result || !chartData.chart.result[0] || !chartData.chart.result[0].timestamp) {
-            throw new Error('Invalid Ticker or No Data: Yahoo Finance did not return time series data for this symbol.');
-        }
-
-        const result = chartData.chart.result[0];
-        const timestamps = result.timestamp;
-        const quotes = result.indicators.quote[0];
 
         const processedData = [];
-        for (let i = 0; i < timestamps.length; i++) {
-            const open = quotes.open[i];
-            const close = quotes.close[i];
+        // The data is an array of objects, which is much cleaner to work with.
+        for (const weekData of data) {
+            const open = weekData.open;
+            const close = weekData.close;
             if (open === null || close === null || open === 0) continue;
-            const date = new Date(timestamps[i] * 1000);
+
+            // The date string from Tiingo is directly compatible with the Date object.
+            const date = new Date(weekData.date);
+            
             processedData.push({
                 date: date,
                 open: open,
@@ -134,13 +128,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 weeklyReturn: (close - open) / open
             });
         }
+        
+        // Tiingo already returns data sorted oldest to newest, which is perfect for our filter logic.
         return processedData;
     }
     
     //
-    // The rest of the file is identical and correct. Included for completeness.
+    // All functions below this line remain the same and are correct.
     //
-
+    
     function calculateSummaryStatistics(data) {
         const weeklyGroups = {};
         data.forEach(d => {
