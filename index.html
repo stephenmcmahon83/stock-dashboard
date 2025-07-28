@@ -3,38 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weekly Stock Market Data (Yahoo Finance)</title>
+    <title>Advanced Stock Market Analysis (Yahoo Finance)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>Weekly Stock Market Data Dashboard</h1>
-        <p>Enter a stock ticker (e.g., AAPL, MSFT, GOOG) to view its historical weekly open and close prices.</p>
-        
+        <h1>Advanced Weekly Stock Analysis</h1>
+        <p>Enter a stock ticker (e.g., AAPL, NVDA, SPY) to view its historical weekly performance and statistical summary.</p>
+
         <div class="note warning">
-            <strong>Analyst's Warning:</strong> This demo fetches data directly from an unofficial Yahoo Finance endpoint via a public CORS proxy. This method is inherently unstable and can break without warning if Yahoo changes its API or the proxy goes down. It is not recommended for production use. For reliable data, a server-side solution with an official API provider is the professional standard.
+            <strong>Analyst's Warning:</strong> This demo uses an unofficial Yahoo Finance endpoint via a public proxy. This method is unstable and can break. It is not for production use. Financial calculations (like Sharpe Ratio) use a simplified model (0% risk-free rate).
         </div>
 
         <div class="input-section">
             <label for="tickerInput">Stock Ticker:</label>
             <input type="text" id="tickerInput" placeholder="e.g., AAPL" value="AAPL">
-            <button id="fetchDataButton">Fetch Data</button>
+            <button id="fetchDataButton">Analyze</button>
         </div>
 
         <div id="message" class="message"></div>
 
+        <!-- Summary Table -->
+        <h2>Performance Summary by Week of the Year</h2>
         <div class="table-container">
-            <table>
+            <table id="summaryTable">
+                <thead>
+                    <tr>
+                        <th>Week #</th>
+                        <th>Count</th>
+                        <th>Avg Return</th>
+                        <th>Profit Factor</th>
+                        <th>Sharpe (Ann.)</th>
+                        <th>Std Dev</th>
+                        <th>Max Return</th>
+                        <th>Min Return</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryTableBody">
+                    <!-- Summary data will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Detailed Weekly Data Table -->
+        <h2>Historical Weekly Data</h2>
+        <div class="table-container">
+            <table id="detailsTable">
                 <thead>
                     <tr>
                         <th>Week #</th>
                         <th>Date</th>
                         <th>Open Price</th>
                         <th>Close Price</th>
+                        <th>% Change</th>
                     </tr>
                 </thead>
                 <tbody id="stockDataTableBody">
-                    <!-- Data will be inserted here by JavaScript -->
+                    <!-- Detailed data will be inserted here -->
                 </tbody>
             </table>
         </div>
